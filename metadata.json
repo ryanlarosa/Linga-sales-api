@@ -1,0 +1,5 @@
+{
+  "name": "LingaPOS Analytics Dashboard",
+  "description": "A comprehensive sales analytics dashboard for LingaPOS, featuring data visualization, multi-store management, and Excel reporting.",
+  "requestFramePermissions": []
+}
