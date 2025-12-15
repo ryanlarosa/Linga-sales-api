@@ -10,6 +10,11 @@ interface DashboardProps {
   onLogout: () => void;
 }
 
+// Helper: Skeleton Component
+const Skeleton = ({ className }: { className: string }) => (
+    <div className={`animate-pulse bg-slate-200 rounded-lg ${className}`}></div>
+);
+
 const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [selectedStore, setSelectedStore] = useState(STORE_LIST[0].id);
   const [fromDate, setFromDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -124,10 +129,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                 <span className="font-medium text-sm">Reports</span>
             </a>
-            <a href="#" className="flex items-center gap-3 px-4 py-2.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-all">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
-                <span className="font-medium text-sm">Settings</span>
-            </a>
         </nav>
         
         <div className="p-4 border-t border-slate-800">
@@ -184,8 +185,17 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                 </div>
             </div>
 
+            {/* KPI Cards Loading State */}
+            {loading && !data && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <Skeleton className="h-40" />
+                    <Skeleton className="h-40" />
+                    <Skeleton className="h-40" />
+                </div>
+            )}
+
             {/* KPI Cards */}
-            {data && (
+            {!loading && data && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="bg-white p-6 rounded-2xl shadow-[0_2px_10px_-4px_rgba(6,81,237,0.1)] border border-slate-100">
                         <div className="flex justify-between items-start mb-4">
@@ -234,8 +244,16 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                 </div>
             )}
 
+            {/* Charts Loading */}
+            {loading && !data && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <Skeleton className="h-80" />
+                    <Skeleton className="h-80" />
+                </div>
+            )}
+
             {/* Charts & Table */}
-            {data && (
+            {!loading && data && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
                         <h3 className="text-lg font-bold text-slate-800 mb-6">Hourly Sales</h3>
