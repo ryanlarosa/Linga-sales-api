@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { User, FetchedData, SaleOrder, MenuItemDetail, Store } from '../types';
+import { User, FetchedData, Store } from '../types';
 import { fetchDashboardData } from '../services/api';
-import { getStores } from '../services/firestoreService';
+import { getStores, getUsers, addUser, addStore, deleteUser, deleteStore, updateUser } from '../services/firestoreService';
 import { exportToExcel } from '../services/excelService';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 
 interface DashboardProps {
   user: User;
@@ -12,6 +12,7 @@ interface DashboardProps {
 
 type ViewMode = 'OVERVIEW' | 'REPORTS' | 'SETTINGS';
 type ReportTab = 'MENU' | 'DISCOUNTS' | 'STAFF';
+type SettingsTab = 'STORES' | 'USERS';
 
 // --- Icons ---
 const IconSales = () => <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
@@ -28,7 +29,6 @@ const Skeleton = ({ className }: { className: string }) => (
 // Helper to parse currency strings safely
 const parseCurrency = (val: string | undefined): number => {
     if (!val) return 0;
-    // Remove currency symbols or commas if present, though usually Linga sends clean strings or simple numbers
     return parseFloat(val.replace(/,/g, '').replace('$', '')) || 0;
 };
 
@@ -40,6 +40,18 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [storeList, setStoreList] = useState<Store[]>([]);
   const [selectedStore, setSelectedStore] = useState<string>("");
   
+  // Settings Management
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('STORES');
+  const [usersList, setUsersList] = useState<User[]>([]);
+  
+  // Forms
+  const [newStoreName, setNewStoreName] = useState('');
+  const [newStoreId, setNewStoreId] = useState('');
+  const [newUser, setNewUser] = useState<Partial<User>>({ role: 'user', allowedStores: [] });
+  const [passwordEditUser, setPasswordEditUser] = useState<string | null>(null); // Track which user is getting password change
+  const [newPassword, setNewPassword] = useState('');
+  const [formMsg, setFormMsg] = useState('');
+
   // Date & Config
   const [fromDate, setFromDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [toDate, setToDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -52,24 +64,34 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
 
   // 1. Fetch Stores on Mount
   useEffect(() => {
-    const initStores = async () => {
-        const stores = await getStores();
-        setStoreList(stores);
-        
-        // Determine available stores based on user role
-        let available = stores;
-        if (user.role !== 'admin' && user.allowedStores && user.allowedStores.length > 0) {
-            available = stores.filter(s => user.allowedStores!.includes(s.id));
-        }
-
-        if (available.length > 0) {
-            setSelectedStore(available[0].id);
-        }
-    };
-    initStores();
+    refreshStores();
+    if(user.role === 'superuser') {
+        refreshUsers();
+    }
   }, [user]);
 
-  // 2. Fetch Dashboard Data when filters change
+  const refreshStores = async () => {
+    const stores = await getStores();
+    setStoreList(stores);
+    
+    // Role Logic for Stores
+    let available = stores;
+    // Superuser & Admin see ALL stores. Only 'user' is restricted.
+    if (user.role === 'user' && user.allowedStores && user.allowedStores.length > 0) {
+        available = stores.filter(s => user.allowedStores!.includes(s.id));
+    }
+
+    if (available.length > 0 && !selectedStore) {
+        setSelectedStore(available[0].id);
+    }
+  };
+
+  const refreshUsers = async () => {
+      const users = await getUsers();
+      setUsersList(users);
+  };
+
+  // 2. Fetch Dashboard Data
   const loadData = async () => {
     if (!selectedStore) return;
     setLoading(true);
@@ -78,7 +100,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       const result = await fetchDashboardData(selectedStore, new Date(fromDate), new Date(toDate), !desiredLiveMode);
       setData(result);
       if (desiredLiveMode && result.isSimulated) {
-        setErrorMsg("API Unreachable. Displaying cached/demo data.");
+        setErrorMsg("API Unreachable (Simulated Mode Active).");
       }
     } catch (err: any) {
       setErrorMsg(err.message || "Failed to load data");
@@ -89,10 +111,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   };
 
   useEffect(() => {
-    if (selectedStore) {
+    if (selectedStore && view !== 'SETTINGS') {
         loadData();
     }
-  }, [selectedStore]);
+  }, [selectedStore, view]);
 
   const handleUpdate = () => loadData();
 
@@ -103,9 +125,83 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       exportToExcel(data, storeName);
   };
 
+  // Admin Actions
+  const handleAddStore = async (e: React.FormEvent) => {
+      e.preventDefault();
+      setLoading(true);
+      try {
+          await addStore({ name: newStoreName, id: newStoreId });
+          await refreshStores();
+          setNewStoreName('');
+          setNewStoreId('');
+          setFormMsg("Store added successfully!");
+      } catch (e) {
+          setFormMsg("Failed to add store.");
+      } finally {
+          setLoading(false);
+          setTimeout(() => setFormMsg(''), 3000);
+      }
+  };
+
+  const handleDeleteStore = async (id: string) => {
+      if(!confirm("Are you sure? This cannot be undone.")) return;
+      await deleteStore(id);
+      refreshStores();
+  };
+
+  const handleAddUser = async (e: React.FormEvent) => {
+      e.preventDefault();
+      setLoading(true);
+      try {
+          if(!newUser.username || !newUser.password) throw new Error("Missing credentials");
+          await addUser(newUser as User);
+          await refreshUsers();
+          setNewUser({ role: 'user', allowedStores: [] });
+          setFormMsg("User added successfully!");
+      } catch (e) {
+          setFormMsg("Failed to add user.");
+      } finally {
+          setLoading(false);
+          setTimeout(() => setFormMsg(''), 3000);
+      }
+  };
+
+  const handleDeleteUser = async (username: string) => {
+      if(!confirm("Delete user?")) return;
+      await deleteUser(username);
+      refreshUsers();
+  };
+
+  const handleUpdatePassword = async (username: string) => {
+      if(!newPassword) return;
+      setLoading(true);
+      try {
+          await updateUser(username, { password: newPassword });
+          setFormMsg(`Password updated for ${username}`);
+          setPasswordEditUser(null);
+          setNewPassword('');
+          await refreshUsers();
+      } catch (e) {
+          setFormMsg("Failed to update password.");
+      } finally {
+          setLoading(false);
+          setTimeout(() => setFormMsg(''), 3000);
+      }
+  }
+
+  const toggleUserStoreAccess = (storeId: string) => {
+      const current = newUser.allowedStores || [];
+      if(current.includes(storeId)) {
+          setNewUser({...newUser, allowedStores: current.filter(id => id !== storeId)});
+      } else {
+          setNewUser({...newUser, allowedStores: [...current, storeId]});
+      }
+  };
+
   // Filter available stores for dropdown
   const availableStores = useMemo(() => {
-      if (user.role === 'admin' || !user.allowedStores || user.allowedStores.length === 0) {
+      // Superuser and Admin see all stores
+      if (user.role === 'superuser' || user.role === 'admin' || !user.allowedStores || user.allowedStores.length === 0) {
           return storeList;
       }
       return storeList.filter(store => user.allowedStores?.includes(store.id));
@@ -113,8 +209,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
 
 
   // --- KPI CALCULATIONS ---
-  // Using data.sales directly to match Excel export and list view
-  const { totalSales, totalGuests, avgTicket, salesByHour, chartData } = useMemo(() => {
+  const { totalSales, totalGuests, avgTicket, chartData } = useMemo(() => {
     if (!data || !data.sales) {
         return { totalSales: "0.00", totalGuests: 0, avgTicket: "0.00", salesByHour: new Map(), chartData: [] };
     }
@@ -124,13 +219,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     const hourMap = new Map<string, number>();
 
     data.sales.forEach(sale => {
-        // Linga API usually returns netSalesStr. If missing, we fallback to 0.
-        // We sum individual tickets to ensure 100% accuracy with the table below.
         netSalesSum += parseCurrency(sale.netSalesStr);
         guestCountSum += sale.guestCount || 0;
-
-        // Populate Chart Data from Sales directly
-        if (sale.saleOpenTime) { // Format: "2023-10-27T14:30:00"
+        if (sale.saleOpenTime) {
             const date = new Date(sale.saleOpenTime);
             if (!isNaN(date.getTime())) {
                 const hour = date.getHours();
@@ -140,11 +231,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         }
     });
 
-    // Avg Ticket
     const ticketCount = data.sales.length;
     const computedAvg = ticketCount > 0 ? (netSalesSum / ticketCount) : 0;
 
-    // Chart Array
     const cData = [];
     for(let i=0; i<24; i++) {
         cData.push({
@@ -157,33 +246,26 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         totalSales: netSalesSum.toFixed(2),
         totalGuests: guestCountSum,
         avgTicket: computedAvg.toFixed(2),
-        salesByHour: hourMap,
         chartData: cData
     };
   }, [data]);
 
-  // --- REPORT CALCULATIONS ---
   const menuPerformance = useMemo(() => {
      if(!data?.menus) return [];
-     // Return raw menu data, assuming api returns sorted list or we sort by gross
      return [...data.menus].sort((a,b) => parseCurrency(b.totalGrossAmountStr) - parseCurrency(a.totalGrossAmountStr));
   }, [data]);
 
   const staffPerformance = useMemo(() => {
      if(!data?.sales) return [];
      const staffMap = new Map<string, {name: string, sales: number, count: number}>();
-     
      data.sales.forEach(sale => {
-         // Find employee name
          const employeeName = data.users.find(u => u.id === sale.employee)?.name || "Unknown";
          const amt = parseCurrency(sale.netSalesStr);
-         
          const existing = staffMap.get(employeeName) || {name: employeeName, sales: 0, count: 0};
          existing.sales += amt;
          existing.count += 1;
          staffMap.set(employeeName, existing);
      });
-
      return Array.from(staffMap.values()).sort((a,b) => b.sales - a.sales);
   }, [data]);
 
@@ -207,7 +289,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                 </div>
                 <div className="overflow-hidden">
                     <p className="text-sm font-semibold text-white truncate">{user.name}</p>
-                    <p className="text-xs text-slate-400 capitalize">{user.role === 'admin' ? 'Administrator' : 'Store User'}</p>
+                    <p className="text-xs text-slate-400 capitalize">{user.role}</p>
                 </div>
             </div>
         </div>
@@ -228,17 +310,21 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                 <span className="font-medium text-sm">Sales Reports</span>
             </button>
             
-            <div className="pt-4 pb-2 px-3">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Settings</p>
-            </div>
-            
-            <button 
-                onClick={() => setView('SETTINGS')}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${view === 'SETTINGS' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
-            >
-                <IconSettings />
-                <span className="font-medium text-sm">Configuration</span>
-            </button>
+            {/* CONFIGURATION - ONLY FOR SUPERUSER */}
+            {user.role === 'superuser' && (
+                <>
+                <div className="pt-4 pb-2 px-3">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Admin</p>
+                </div>
+                <button 
+                    onClick={() => setView('SETTINGS')}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${view === 'SETTINGS' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+                >
+                    <IconSettings />
+                    <span className="font-medium text-sm">Configuration</span>
+                </button>
+                </>
+            )}
         </nav>
         
         <div className="p-4 border-t border-slate-800">
@@ -256,7 +342,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         <header className="bg-slate-900/80 backdrop-blur-md border-b border-slate-800 sticky top-0 z-30 px-8 py-4 flex justify-between items-center h-20">
              <div>
                 <h2 className="text-xl font-bold text-white tracking-tight">
-                    {view === 'OVERVIEW' ? 'Analytics Overview' : view === 'REPORTS' ? 'Detailed Reports' : 'System Settings'}
+                    {view === 'OVERVIEW' ? 'Analytics Overview' : view === 'REPORTS' ? 'Detailed Reports' : 'System Configuration'}
                 </h2>
                 <div className="flex items-center gap-2 mt-1">
                      <span className={`w-2 h-2 rounded-full ${data?.isSimulated ? 'bg-amber-400' : 'bg-emerald-500 animate-pulse'}`}></span>
@@ -287,12 +373,178 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
             </div>
         )}
 
-        {/* GLOBAL FILTERS */}
+        {/* VIEW: SETTINGS (SUPERUSER ONLY) */}
+        {view === 'SETTINGS' && user.role === 'superuser' ? (
+             <div className="px-8 pb-8 space-y-6 max-w-[1600px] mx-auto pt-8">
+                 <div className="flex gap-4 border-b border-slate-800 pb-1">
+                    <button onClick={() => setSettingsTab('STORES')} className={`px-4 py-2 text-sm font-bold border-b-2 transition-colors ${settingsTab === 'STORES' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>Store Management</button>
+                    <button onClick={() => setSettingsTab('USERS')} className={`px-4 py-2 text-sm font-bold border-b-2 transition-colors ${settingsTab === 'USERS' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>User Management</button>
+                 </div>
+                 
+                 {formMsg && <div className="p-4 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20">{formMsg}</div>}
+
+                 {settingsTab === 'STORES' && (
+                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        {/* Add Store Form */}
+                        <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 h-fit">
+                            <h3 className="text-lg font-bold text-white mb-4">Add New Store</h3>
+                            <form onSubmit={handleAddStore} className="space-y-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Store Name</label>
+                                    <input required type="text" value={newStoreName} onChange={e => setNewStoreName(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 outline-none" placeholder="e.g. Downtown Branch" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Linga Store ID</label>
+                                    <input required type="text" value={newStoreId} onChange={e => setNewStoreId(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 outline-none" placeholder="24-char ID" />
+                                </div>
+                                <button disabled={loading} type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 rounded-lg transition-colors text-sm">
+                                    {loading ? 'Adding...' : 'Add Store'}
+                                </button>
+                            </form>
+                        </div>
+                        {/* Store List */}
+                        <div className="lg:col-span-2 bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden">
+                             <div className="p-4 bg-slate-900 border-b border-slate-800"><h3 className="font-bold text-white">Active Stores ({storeList.length})</h3></div>
+                             <div className="overflow-auto max-h-[500px]">
+                                 <table className="w-full text-left text-sm">
+                                     <thead className="bg-slate-950 text-slate-500 font-bold uppercase text-xs">
+                                         <tr><th className="px-6 py-3">Name</th><th className="px-6 py-3">ID</th><th className="px-6 py-3 text-right">Action</th></tr>
+                                     </thead>
+                                     <tbody className="divide-y divide-slate-800">
+                                         {storeList.map(store => (
+                                             <tr key={store.id} className="hover:bg-slate-800/50">
+                                                 <td className="px-6 py-3 text-white font-medium">{store.name}</td>
+                                                 <td className="px-6 py-3 text-slate-400 font-mono text-xs">{store.id}</td>
+                                                 <td className="px-6 py-3 text-right">
+                                                     <button onClick={() => handleDeleteStore(store.id)} className="text-red-400 hover:text-red-300 text-xs font-bold">REMOVE</button>
+                                                 </td>
+                                             </tr>
+                                         ))}
+                                     </tbody>
+                                 </table>
+                             </div>
+                        </div>
+                     </div>
+                 )}
+
+                 {settingsTab === 'USERS' && (
+                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        {/* Add User Form */}
+                        <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 h-fit">
+                            <h3 className="text-lg font-bold text-white mb-4">Create User</h3>
+                            <form onSubmit={handleAddUser} className="space-y-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Full Name</label>
+                                    <input required type="text" value={newUser.name || ''} onChange={e => setNewUser({...newUser, name: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" placeholder="John Doe" />
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Username</label>
+                                        <input required type="text" value={newUser.username || ''} onChange={e => setNewUser({...newUser, username: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Password</label>
+                                        <input required type="password" value={newUser.password || ''} onChange={e => setNewUser({...newUser, password: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Role</label>
+                                    <select value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value as 'superuser'|'admin'|'user'})} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white">
+                                        <option value="user">Store User (One or more stores)</option>
+                                        <option value="admin">Admin (All Stores, No Config)</option>
+                                        <option value="superuser">Superuser (Full Access)</option>
+                                    </select>
+                                </div>
+                                {newUser.role === 'user' && (
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Allowed Stores</label>
+                                        <div className="max-h-40 overflow-y-auto bg-slate-950 border border-slate-700 rounded-lg p-2 space-y-1 custom-scrollbar">
+                                            {storeList.map(store => (
+                                                <div key={store.id} onClick={() => toggleUserStoreAccess(store.id)} className={`cursor-pointer px-2 py-1.5 rounded text-xs flex items-center justify-between ${newUser.allowedStores?.includes(store.id) ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>
+                                                    <span>{store.name}</span>
+                                                    {newUser.allowedStores?.includes(store.id) && <span>✓</span>}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                <button disabled={loading} type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 rounded-lg transition-colors text-sm">
+                                    {loading ? 'Saving...' : 'Create User'}
+                                </button>
+                            </form>
+                        </div>
+                        {/* User List */}
+                        <div className="lg:col-span-2 bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden">
+                             <div className="p-4 bg-slate-900 border-b border-slate-800 flex justify-between items-center">
+                                 <h3 className="font-bold text-white">System Users ({usersList.length})</h3>
+                                 <span className="text-xs text-slate-500">Superuser can edit passwords here</span>
+                             </div>
+                             <div className="overflow-auto max-h-[600px]">
+                                 <table className="w-full text-left text-sm">
+                                     <thead className="bg-slate-950 text-slate-500 font-bold uppercase text-xs">
+                                         <tr><th className="px-6 py-3">User</th><th className="px-6 py-3">Role</th><th className="px-6 py-3">Access</th><th className="px-6 py-3 text-right">Action</th></tr>
+                                     </thead>
+                                     <tbody className="divide-y divide-slate-800">
+                                         {usersList.map(u => (
+                                             <tr key={u.username} className="hover:bg-slate-800/50">
+                                                 <td className="px-6 py-3">
+                                                     <p className="text-white font-medium">{u.name}</p>
+                                                     <p className="text-slate-500 text-xs">@{u.username}</p>
+                                                 </td>
+                                                 <td className="px-6 py-3">
+                                                     <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                                         u.role === 'superuser' ? 'bg-indigo-500/20 text-indigo-300' : 
+                                                         u.role === 'admin' ? 'bg-emerald-500/20 text-emerald-300' :
+                                                         'bg-slate-700 text-slate-300'
+                                                     }`}>
+                                                         {u.role}
+                                                     </span>
+                                                 </td>
+                                                 <td className="px-6 py-3 text-xs text-slate-400">
+                                                     {(u.role === 'superuser' || u.role === 'admin') ? 'All Stores' : `${u.allowedStores?.length || 0} Stores assigned`}
+                                                 </td>
+                                                 <td className="px-6 py-3 text-right">
+                                                     {passwordEditUser === u.username ? (
+                                                         <div className="flex items-center justify-end gap-2">
+                                                             <input 
+                                                                 type="text" 
+                                                                 className="w-24 bg-slate-950 border border-slate-700 rounded text-xs px-2 py-1 text-white" 
+                                                                 placeholder="New Pass"
+                                                                 value={newPassword}
+                                                                 onChange={(e) => setNewPassword(e.target.value)}
+                                                             />
+                                                             <button onClick={() => handleUpdatePassword(u.username)} className="text-emerald-400 font-bold text-xs">OK</button>
+                                                             <button onClick={() => {setPasswordEditUser(null); setNewPassword('');}} className="text-slate-500 font-bold text-xs">X</button>
+                                                         </div>
+                                                     ) : (
+                                                         <div className="flex items-center justify-end gap-3">
+                                                            <button onClick={() => setPasswordEditUser(u.username)} className="text-indigo-400 hover:text-indigo-300 text-xs font-medium">Pwd</button>
+                                                            {u.username !== 'admin' && ( // Prevent deleting main admin by username convention, or check role
+                                                                <button onClick={() => handleDeleteUser(u.username)} className="text-red-400 hover:text-red-300 text-xs font-bold">DEL</button>
+                                                            )}
+                                                         </div>
+                                                     )}
+                                                 </td>
+                                             </tr>
+                                         ))}
+                                     </tbody>
+                                 </table>
+                             </div>
+                        </div>
+                     </div>
+                 )}
+             </div>
+        ) : view === 'SETTINGS' ? (
+            <div className="px-8 pb-8 pt-12 text-center text-slate-500">
+                Access Denied. Superuser privileges required.
+            </div>
+        ) : (
+            // GLOBAL FILTERS (Existing Overview/Reports logic...)
         <div className="px-8 pt-8 pb-4">
              <div className="bg-slate-900 p-5 rounded-2xl shadow-sm border border-slate-800 flex flex-col xl:flex-row gap-6 items-end">
                 <div className="w-full xl:flex-1">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 block">
-                        {user.role === 'admin' ? 'Store Location (Admin Access)' : 'Authorized Store Location'}
+                        {(user.role === 'superuser' || user.role === 'admin') ? 'Store Location (Unrestricted Access)' : 'Authorized Store Location'}
                     </label>
                     <div className="relative">
                         {storeList.length > 0 ? (
@@ -346,6 +598,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                 </div>
             </div>
         </div>
+        )}
 
         {/* === VIEW: OVERVIEW === */}
         {view === 'OVERVIEW' && (
@@ -583,25 +836,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                         </div>
                     </div>
                 )}
-            </div>
-        )}
-
-        {/* === VIEW: SETTINGS === */}
-        {view === 'SETTINGS' && (
-            <div className="px-8 pb-8 max-w-[800px] mx-auto">
-                <div className="bg-slate-900 rounded-2xl border border-slate-800 p-8 text-center space-y-4">
-                    <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto text-slate-500">
-                        <IconSettings />
-                    </div>
-                    <h3 className="text-xl font-bold text-white">System Configuration</h3>
-                    <p className="text-slate-400">
-                        Global settings and API configurations are managed by the administrator. 
-                        <br/>Current Version: <span className="text-indigo-400 font-mono">v2.4.1</span>
-                    </p>
-                    <div className="pt-4">
-                        <button className="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-colors text-sm font-medium">Check for Updates</button>
-                    </div>
-                </div>
             </div>
         )}
 

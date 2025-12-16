@@ -1,5 +1,5 @@
 import { db } from "./firebase";
-import { collection, getDocs, query, where, doc, setDoc, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
+import { collection, getDocs, query, where, doc, setDoc, deleteDoc, updateDoc, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
 import { User, Store } from "../types";
 import { MOCK_USERS, STORE_LIST } from "../constants";
 
@@ -51,6 +51,49 @@ export const initializeDatabase = async () => {
 
 // --- USERS ---
 
+export const getUsers = async (): Promise<User[]> => {
+    try {
+        const usersRef = collection(db, "users");
+        const snapshot = await getDocs(usersRef);
+        const users: User[] = [];
+        snapshot.forEach((doc) => {
+            users.push(doc.data() as User);
+        });
+        return users;
+    } catch (error) {
+        console.error("Error getting users:", error);
+        return MOCK_USERS;
+    }
+};
+
+export const addUser = async (user: User): Promise<void> => {
+    try {
+        await setDoc(doc(db, "users", user.username), user);
+    } catch (error) {
+        console.error("Error adding user:", error);
+        throw error;
+    }
+};
+
+export const updateUser = async (username: string, updates: Partial<User>): Promise<void> => {
+    try {
+        const userRef = doc(db, "users", username);
+        await updateDoc(userRef, updates);
+    } catch (error) {
+        console.error("Error updating user:", error);
+        throw error;
+    }
+}
+
+export const deleteUser = async (username: string): Promise<void> => {
+    try {
+        await deleteDoc(doc(db, "users", username));
+    } catch (error) {
+        console.error("Error deleting user:", error);
+        throw error;
+    }
+}
+
 export const loginUser = async (username: string, password: string): Promise<User | null> => {
   try {
     const usersRef = collection(db, "users");
@@ -76,7 +119,7 @@ export const loginUser = async (username: string, password: string): Promise<Use
       if (userData.password === password) {
         foundUser = {
           username: userData.username,
-          role: userData.role,
+          role: userData.role as 'superuser' | 'admin' | 'user',
           name: userData.name,
           allowedStores: userData.allowedStores
         };
@@ -97,7 +140,7 @@ export const loginUser = async (username: string, password: string): Promise<Use
     if(mock) {
         return {
             username: mock.username,
-            role: mock.role as 'admin' | 'user',
+            role: mock.role as 'superuser' | 'admin' | 'user',
             name: mock.name,
             allowedStores: mock.allowedStores
         };
@@ -107,6 +150,24 @@ export const loginUser = async (username: string, password: string): Promise<Use
 };
 
 // --- STORES ---
+
+export const addStore = async (store: Store): Promise<void> => {
+    try {
+        await setDoc(doc(db, "stores", store.id), store);
+    } catch (error) {
+        console.error("Error adding store:", error);
+        throw error;
+    }
+};
+
+export const deleteStore = async (storeId: string): Promise<void> => {
+    try {
+        await deleteDoc(doc(db, "stores", storeId));
+    } catch (error) {
+        console.error("Error deleting store:", error);
+        throw error;
+    }
+};
 
 export const getStores = async (): Promise<Store[]> => {
   try {

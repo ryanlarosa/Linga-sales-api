@@ -1,6 +1,7 @@
 export interface User {
   username: string;
-  role: 'admin' | 'user';
+  password?: string;
+  role: 'superuser' | 'admin' | 'user'; // 'superuser' = config access, 'admin' = read all stores, 'user' = specific stores
   name?: string;
   allowedStores?: string[]; // Array of Store IDs this user is authorized to access
 }

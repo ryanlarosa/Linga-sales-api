@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { User } from '../types';
-import { loginUser, initializeDatabase } from '../services/firestoreService';
+import { loginUser } from '../services/firestoreService';
 
 interface LoginScreenProps {
   onLogin: (user: User) => void;
@@ -11,14 +11,11 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [msg, setMsg] = useState('');
-  const [showInit, setShowInit] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
-    setMsg('');
     
     try {
         // Attempt login. If Firestore fails, it falls back to mocks automatically.
@@ -33,22 +30,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
     } finally {
         setLoading(false);
     }
-  };
-
-  const handleInitDB = async () => {
-      if(!confirm("This will populate the database with default Users and Stores. Continue?")) return;
-      setLoading(true);
-      setMsg("Connecting to Firestore...");
-      setError("");
-      try {
-          await initializeDatabase();
-          setMsg("Database initialized successfully!");
-      } catch (e: any) {
-          // Display the friendly error message from the service
-          setError(e.message || "Failed to initialize DB.");
-      } finally {
-          setLoading(false);
-      }
   };
 
   return (
@@ -85,7 +66,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
                             value={username}
                             onChange={(e) => setUsername(e.target.value)}
                             className="w-full bg-slate-950/50 border border-slate-800 rounded-xl px-4 py-3.5 text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all shadow-inner hover:bg-slate-950/80"
-                            placeholder="admin"
+                            placeholder="Enter your username"
                         />
                     </div>
                     <div className="group">
@@ -108,13 +89,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
                     </div>
                 )}
 
-                {msg && (
-                    <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs p-3 rounded-xl flex items-center gap-2 animate-fadeIn">
-                        <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                        {msg}
-                    </div>
-                )}
-
                 {/* Login Button */}
                 <button
                     type="submit"
@@ -133,32 +107,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
                     )}
                 </button>
             </form>
-
-            {/* Footer / Setup Toggle */}
-            <div className="mt-8 pt-6 border-t border-white/5 text-center">
-                <button 
-                    onClick={() => setShowInit(!showInit)}
-                    className="text-[10px] text-slate-600 hover:text-indigo-400 transition-colors uppercase tracking-widest flex items-center justify-center gap-1 mx-auto"
-                >
-                   {showInit ? 'Hide System Options' : 'System Options'}
-                   <svg className={`w-3 h-3 transition-transform ${showInit ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                </button>
-
-                {showInit && (
-                    <div className="mt-4 bg-slate-950/50 p-4 rounded-xl border border-slate-800 animate-fadeIn">
-                        <p className="text-xs text-slate-500 mb-3">
-                            First time setup? Initialize the cloud database.
-                        </p>
-                        <button 
-                            onClick={handleInitDB} 
-                            disabled={loading}
-                            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-indigo-300 text-xs font-medium rounded-lg transition-colors border border-slate-700 w-full"
-                        >
-                            Initialize Database
-                        </button>
-                    </div>
-                )}
-            </div>
         </div>
         
         <p className="text-center text-slate-600 text-[10px] mt-8 uppercase tracking-widest opacity-50">
