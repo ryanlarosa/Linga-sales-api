@@ -2,6 +2,7 @@ export interface User {
   username: string;
   role: 'admin' | 'user';
   name?: string;
+  allowedStores?: string[]; // Array of Store IDs this user is authorized to access
 }
 
 export interface Store {

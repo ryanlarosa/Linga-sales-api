@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { User } from '../types';
+import { loginUser } from '../services/firestoreService';
 
 interface LoginScreenProps {
   onLogin: (user: User) => void;
@@ -11,21 +12,23 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
     
-    setTimeout(() => {
-        if (username.toLowerCase() === 'admin' && password === 'admin') {
-            onLogin({ username: 'admin', role: 'admin', name: 'Administrator' });
-        } else if (username.toLowerCase() === 'user' && password === 'user') {
-            onLogin({ username: 'user', role: 'user', name: 'Sales Associate' });
+    try {
+        const user = await loginUser(username, password);
+        if (user) {
+            onLogin(user);
         } else {
-            setError('Invalid credentials. Try admin / admin');
-            setLoading(false);
+            setError('Invalid credentials.');
         }
-    }, 800);
+    } catch (err) {
+        setError('Connection failed. Please try again.');
+    } finally {
+        setLoading(false);
+    }
   };
 
   return (
@@ -52,7 +55,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
                         value={username}
                         onChange={(e) => setUsername(e.target.value)}
                         className="w-full bg-slate-900/60 border border-slate-700/50 rounded-xl px-4 py-3.5 text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all shadow-inner"
-                        placeholder="Enter your username"
+                        placeholder="Enter username"
                     />
                 </div>
                 <div className="group">
@@ -62,7 +65,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         className="w-full bg-slate-900/60 border border-slate-700/50 rounded-xl px-4 py-3.5 text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all shadow-inner"
-                        placeholder="Enter your password"
+                        placeholder="Enter password"
                     />
                 </div>
 
@@ -81,7 +84,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
                     {loading ? (
                         <div className="flex items-center justify-center gap-2">
                              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                             <span>Connecting...</span>
+                             <span>Verifying...</span>
                         </div>
                     ) : 'Access Dashboard'}
                 </button>
@@ -93,7 +96,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
                 </p>
             </div>
         </div>
-        <p className="text-center text-slate-600 text-[10px] mt-8 uppercase tracking-widest opacity-50">LingaPOS Analytics v2.4.0</p>
+        <p className="text-center text-slate-600 text-[10px] mt-8 uppercase tracking-widest opacity-50">LingaPOS Analytics v2.5</p>
       </div>
     </div>
   );
