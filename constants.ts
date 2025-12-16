@@ -1,4 +1,4 @@
-import { Store } from './types';
+import { Store } from "./types";
 
 export const STORE_LIST: Store[] = [
   { name: "Common Grounds DIFC", id: "5e4be85b7237b70001de9106" },
@@ -24,15 +24,15 @@ export const STORE_LIST: Store[] = [
   { name: "Frankys Pizzeria", id: "63d0d31fc2091c1ff32eb975" },
   { name: "Encounter Coffee Internet City", id: "64c0d6baefad72745ad3bba4" },
   { name: "Common Grounds Kite Beach", id: "6530e1cf5f90feddc15e651c" },
-  { name: "The Guild Restaurant", id: "64a7fd77e6251d77d453b0f5" }
+  { name: "The Guild Restaurant", id: "64a7fd77e6251d77d453b0f5" },
 ];
 
 export const API_KEY = "UiSg7JagVOd42IEwAnctfWS6qSTaKxxr";
-export const API_BASE_URL = "https://api.lingapos.com";
+// Updated to lingaros.com based on working backend reference
+export const API_BASE_URL = "https://api.lingaros.com";
 
 // On Vercel, the API lives at the same domain in the /api folder
-// No need to copy-paste URLs anymore!
-export const BACKEND_URL = "/api/proxy"; 
+export const BACKEND_URL = "/api/proxy";
 
 // Set to true to force using the mock data generator engine
 export const USE_MOCK_DATA = false;
