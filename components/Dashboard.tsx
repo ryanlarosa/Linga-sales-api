@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { User, FetchedData } from "../types";
+import React, { useState, useEffect, useMemo } from "react";
+import { User, FetchedData, SaleOrder, MenuItemDetail } from "../types";
 import { STORE_LIST } from "../constants";
 import { fetchDashboardData } from "../services/api";
 import { exportToExcel } from "../services/excelService";
@@ -11,6 +11,9 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  BarChart,
+  Bar,
+  Legend,
 } from "recharts";
 
 interface DashboardProps {
@@ -18,7 +21,10 @@ interface DashboardProps {
   onLogout: () => void;
 }
 
-// Custom Icons
+type ViewMode = "OVERVIEW" | "REPORTS" | "SETTINGS";
+type ReportTab = "MENU" | "DISCOUNTS" | "STAFF";
+
+// --- Icons ---
 const IconSales = () => (
   <svg
     className="w-6 h-6"
@@ -64,12 +70,73 @@ const IconReceipt = () => (
     />
   </svg>
 );
+const IconChart = () => (
+  <svg
+    className="w-5 h-5"
+    fill="none"
+    stroke="currentColor"
+    viewBox="0 0 24 24"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+    />
+  </svg>
+);
+const IconMenu = () => (
+  <svg
+    className="w-5 h-5"
+    fill="none"
+    stroke="currentColor"
+    viewBox="0 0 24 24"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+    />
+  </svg>
+);
+const IconSettings = () => (
+  <svg
+    className="w-5 h-5"
+    fill="none"
+    stroke="currentColor"
+    viewBox="0 0 24 24"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+    />
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+    />
+  </svg>
+);
 
 const Skeleton = ({ className }: { className: string }) => (
   <div className={`animate-pulse bg-slate-800 rounded-lg ${className}`}></div>
 );
 
+// Helper to parse currency strings safely
+const parseCurrency = (val: string | undefined): number => {
+  if (!val) return 0;
+  // Remove currency symbols or commas if present, though usually Linga sends clean strings or simple numbers
+  return parseFloat(val.replace(/,/g, "").replace("$", "")) || 0;
+};
+
 const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
+  const [view, setView] = useState<ViewMode>("OVERVIEW");
+  const [reportTab, setReportTab] = useState<ReportTab>("MENU");
+
   const [selectedStore, setSelectedStore] = useState(STORE_LIST[0].id);
   const [fromDate, setFromDate] = useState<string>(
     new Date().toISOString().split("T")[0]
@@ -78,6 +145,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     new Date().toISOString().split("T")[0]
   );
   const [desiredLiveMode, setDesiredLiveMode] = useState<boolean>(true);
+
   const [data, setData] = useState<FetchedData | null>(null);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -110,38 +178,100 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
 
   const handleUpdate = () => loadData();
 
-  // Chart Data Preparation
-  const salesByHour = new Map<string, number>();
-  if (data) {
-    data.saleSummary.forEach((item) => {
-      if (item.saleOpenDate) {
-        const date = new Date(item.saleOpenDate);
-        const key = date.getHours();
-        const val = parseFloat(item.netSales);
-        salesByHour.set(String(key), (salesByHour.get(String(key)) || 0) + val);
+  // --- KPI CALCULATIONS ---
+  // Using data.sales directly to match Excel export and list view
+  const { totalSales, totalGuests, avgTicket, salesByHour, chartData } =
+    useMemo(() => {
+      if (!data || !data.sales) {
+        return {
+          totalSales: "0.00",
+          totalGuests: 0,
+          avgTicket: "0.00",
+          salesByHour: new Map(),
+          chartData: [],
+        };
       }
-    });
-  }
-  const chartData = [];
-  for (let i = 0; i < 24; i++) {
-    chartData.push({
-      time: `${i}:00`,
-      netSales: salesByHour.get(String(i)) || 0,
-    });
-  }
 
-  const totalSales = data
-    ? data.saleSummary
-        .reduce((acc, curr) => acc + parseFloat(curr.netSales), 0)
-        .toFixed(2)
-    : "0.00";
-  const totalGuests = data
-    ? data.sales.reduce((acc, curr) => acc + curr.guestCount, 0)
-    : 0;
-  const avgTicket =
-    data && data.sales.length > 0
-      ? (parseFloat(totalSales) / data.sales.length).toFixed(2)
-      : "0.00";
+      let netSalesSum = 0;
+      let guestCountSum = 0;
+      const hourMap = new Map<string, number>();
+
+      data.sales.forEach((sale) => {
+        // Linga API usually returns netSalesStr. If missing, we fallback to 0.
+        // We sum individual tickets to ensure 100% accuracy with the table below.
+        netSalesSum += parseCurrency(sale.netSalesStr);
+        guestCountSum += sale.guestCount || 0;
+
+        // Populate Chart Data from Sales directly
+        if (sale.saleOpenTime) {
+          // Format: "2023-10-27T14:30:00"
+          const date = new Date(sale.saleOpenTime);
+          if (!isNaN(date.getTime())) {
+            const hour = date.getHours();
+            const amt = parseCurrency(sale.netSalesStr);
+            hourMap.set(String(hour), (hourMap.get(String(hour)) || 0) + amt);
+          }
+        }
+      });
+
+      // Avg Ticket
+      const ticketCount = data.sales.length;
+      const computedAvg = ticketCount > 0 ? netSalesSum / ticketCount : 0;
+
+      // Chart Array
+      const cData = [];
+      for (let i = 0; i < 24; i++) {
+        cData.push({
+          time: `${i}:00`,
+          netSales: hourMap.get(String(i)) || 0,
+        });
+      }
+
+      return {
+        totalSales: netSalesSum.toFixed(2),
+        totalGuests: guestCountSum,
+        avgTicket: computedAvg.toFixed(2),
+        salesByHour: hourMap,
+        chartData: cData,
+      };
+    }, [data]);
+
+  // --- REPORT CALCULATIONS ---
+  const menuPerformance = useMemo(() => {
+    if (!data?.menus) return [];
+    // Return raw menu data, assuming api returns sorted list or we sort by gross
+    return [...data.menus].sort(
+      (a, b) =>
+        parseCurrency(b.totalGrossAmountStr) -
+        parseCurrency(a.totalGrossAmountStr)
+    );
+  }, [data]);
+
+  const staffPerformance = useMemo(() => {
+    if (!data?.sales) return [];
+    const staffMap = new Map<
+      string,
+      { name: string; sales: number; count: number }
+    >();
+
+    data.sales.forEach((sale) => {
+      // Find employee name
+      const employeeName =
+        data.users.find((u) => u.id === sale.employee)?.name || "Unknown";
+      const amt = parseCurrency(sale.netSalesStr);
+
+      const existing = staffMap.get(employeeName) || {
+        name: employeeName,
+        sales: 0,
+        count: 0,
+      };
+      existing.sales += amt;
+      existing.count += 1;
+      staffMap.set(employeeName, existing);
+    });
+
+    return Array.from(staffMap.values()).sort((a, b) => b.sales - a.sales);
+  }, [data]);
 
   return (
     <div className="flex h-screen bg-slate-950 font-sans text-slate-100 overflow-hidden">
@@ -171,74 +301,46 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         </div>
 
         <nav className="flex-1 px-3 space-y-1 mt-2">
-          <a
-            href="#"
-            className="flex items-center gap-3 px-3 py-2.5 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-xl"
+          <button
+            onClick={() => setView("OVERVIEW")}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${
+              view === "OVERVIEW"
+                ? "bg-indigo-500/10 text-indigo-400 border border-indigo-500/20"
+                : "text-slate-400 hover:text-white hover:bg-slate-800"
+            }`}
           >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"
-              />
-            </svg>
+            <IconChart />
             <span className="font-medium text-sm">Overview</span>
-          </a>
-          <a
-            href="#"
-            className="flex items-center gap-3 px-3 py-2.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors"
+          </button>
+          <button
+            onClick={() => setView("REPORTS")}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${
+              view === "REPORTS"
+                ? "bg-indigo-500/10 text-indigo-400 border border-indigo-500/20"
+                : "text-slate-400 hover:text-white hover:bg-slate-800"
+            }`}
           >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-              />
-            </svg>
+            <IconMenu />
             <span className="font-medium text-sm">Sales Reports</span>
-          </a>
+          </button>
+
           <div className="pt-4 pb-2 px-3">
             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
               Settings
             </p>
           </div>
-          <a
-            href="#"
-            className="flex items-center gap-3 px-3 py-2.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors"
+
+          <button
+            onClick={() => setView("SETTINGS")}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${
+              view === "SETTINGS"
+                ? "bg-indigo-500/10 text-indigo-400 border border-indigo-500/20"
+                : "text-slate-400 hover:text-white hover:bg-slate-800"
+            }`}
           >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-              />
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-              />
-            </svg>
+            <IconSettings />
             <span className="font-medium text-sm">Configuration</span>
-          </a>
+          </button>
         </nav>
 
         <div className="p-4 border-t border-slate-800">
@@ -270,7 +372,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         <header className="bg-slate-900/80 backdrop-blur-md border-b border-slate-800 sticky top-0 z-30 px-8 py-4 flex justify-between items-center h-20">
           <div>
             <h2 className="text-xl font-bold text-white tracking-tight">
-              Analytics Overview
+              {view === "OVERVIEW"
+                ? "Analytics Overview"
+                : view === "REPORTS"
+                ? "Detailed Reports"
+                : "System Settings"}
             </h2>
             <div className="flex items-center gap-2 mt-1">
               <span
@@ -358,9 +464,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
           </div>
         )}
 
-        <div className="p-8 space-y-8 max-w-[1600px] mx-auto">
-          {/* Filters */}
-          <div className="bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-800 flex flex-col xl:flex-row gap-6 items-end">
+        {/* GLOBAL FILTERS */}
+        <div className="px-8 pt-8 pb-4">
+          <div className="bg-slate-900 p-5 rounded-2xl shadow-sm border border-slate-800 flex flex-col xl:flex-row gap-6 items-end">
             <div className="w-full xl:flex-1">
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 block">
                 Store Location
@@ -452,219 +558,479 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
               </button>
             </div>
           </div>
+        </div>
 
-          {/* KPI Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-800 relative overflow-hidden group">
-              <div className="flex justify-between items-start mb-4">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                  Net Sales
-                </p>
-                <div className="p-2 bg-indigo-500/10 text-indigo-400 rounded-lg group-hover:bg-indigo-500/20 transition-colors">
-                  <IconSales />
+        {/* === VIEW: OVERVIEW === */}
+        {view === "OVERVIEW" && (
+          <div className="px-8 pb-8 space-y-8 max-w-[1600px] mx-auto">
+            {/* KPI Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-800 relative overflow-hidden group">
+                <div className="flex justify-between items-start mb-4">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    Net Sales
+                  </p>
+                  <div className="p-2 bg-indigo-500/10 text-indigo-400 rounded-lg group-hover:bg-indigo-500/20 transition-colors">
+                    <IconSales />
+                  </div>
+                </div>
+                {loading && !data ? (
+                  <Skeleton className="h-10 w-32" />
+                ) : (
+                  <h3 className="text-3xl font-bold text-white tracking-tight">
+                    ${totalSales}
+                  </h3>
+                )}
+                <div className="mt-4 w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                  <div className="bg-indigo-500 h-full w-[75%] rounded-full shadow-[0_0_10px_rgba(99,102,241,0.5)]"></div>
                 </div>
               </div>
-              {loading && !data ? (
-                <Skeleton className="h-10 w-32" />
-              ) : (
-                <h3 className="text-3xl font-bold text-white tracking-tight">
-                  ${totalSales}
-                </h3>
-              )}
-              <div className="mt-4 w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                <div className="bg-indigo-500 h-full w-[75%] rounded-full shadow-[0_0_10px_rgba(99,102,241,0.5)]"></div>
+
+              <div className="bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-800 relative overflow-hidden group">
+                <div className="flex justify-between items-start mb-4">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    Total Guests
+                  </p>
+                  <div className="p-2 bg-blue-500/10 text-blue-400 rounded-lg group-hover:bg-blue-500/20 transition-colors">
+                    <IconUsers />
+                  </div>
+                </div>
+                {loading && !data ? (
+                  <Skeleton className="h-10 w-24" />
+                ) : (
+                  <h3 className="text-3xl font-bold text-white tracking-tight">
+                    {totalGuests}
+                  </h3>
+                )}
+                <div className="mt-4 w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                  <div className="bg-blue-500 h-full w-[45%] rounded-full shadow-[0_0_10px_rgba(59,130,246,0.5)]"></div>
+                </div>
+              </div>
+
+              <div className="bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-800 relative overflow-hidden group">
+                <div className="flex justify-between items-start mb-4">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    Avg Ticket
+                  </p>
+                  <div className="p-2 bg-emerald-500/10 text-emerald-400 rounded-lg group-hover:bg-emerald-500/20 transition-colors">
+                    <IconReceipt />
+                  </div>
+                </div>
+                {loading && !data ? (
+                  <Skeleton className="h-10 w-32" />
+                ) : (
+                  <h3 className="text-3xl font-bold text-white tracking-tight">
+                    ${avgTicket}
+                  </h3>
+                )}
+                <div className="mt-4 w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                  <div className="bg-emerald-500 h-full w-[60%] rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)]"></div>
+                </div>
               </div>
             </div>
 
-            <div className="bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-800 relative overflow-hidden group">
-              <div className="flex justify-between items-start mb-4">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                  Total Guests
-                </p>
-                <div className="p-2 bg-blue-500/10 text-blue-400 rounded-lg group-hover:bg-blue-500/20 transition-colors">
-                  <IconUsers />
+            {/* Charts Section */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2 bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-800 flex flex-col h-[400px]">
+                <h3 className="text-sm font-bold text-slate-300 mb-6 uppercase tracking-wider">
+                  Hourly Sales Trend
+                </h3>
+                <div className="flex-1 w-full min-h-0">
+                  {loading && !data ? (
+                    <Skeleton className="w-full h-full" />
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart
+                        data={chartData}
+                        margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                      >
+                        <defs>
+                          <linearGradient
+                            id="colorSales"
+                            x1="0"
+                            y1="0"
+                            x2="0"
+                            y2="1"
+                          >
+                            <stop
+                              offset="5%"
+                              stopColor="#6366f1"
+                              stopOpacity={0.3}
+                            />
+                            <stop
+                              offset="95%"
+                              stopColor="#6366f1"
+                              stopOpacity={0}
+                            />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          vertical={false}
+                          stroke="#1e293b"
+                        />
+                        <XAxis
+                          dataKey="time"
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: "#64748b", fontSize: 11 }}
+                          dy={10}
+                          interval={3}
+                        />
+                        <YAxis
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: "#64748b", fontSize: 11 }}
+                          tickFormatter={(val) => `$${val}`}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: "#0f172a",
+                            borderRadius: "12px",
+                            border: "1px solid #1e293b",
+                            color: "#fff",
+                            boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.5)",
+                          }}
+                          itemStyle={{ color: "#fff" }}
+                          cursor={{
+                            stroke: "#6366f1",
+                            strokeWidth: 1,
+                            strokeDasharray: "4 4",
+                          }}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="netSales"
+                          stroke="#6366f1"
+                          strokeWidth={3}
+                          fillOpacity={1}
+                          fill="url(#colorSales)"
+                          activeDot={{ r: 6, strokeWidth: 0, fill: "#818cf8" }}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  )}
                 </div>
               </div>
-              {loading && !data ? (
-                <Skeleton className="h-10 w-24" />
-              ) : (
-                <h3 className="text-3xl font-bold text-white tracking-tight">
-                  {totalGuests}
-                </h3>
-              )}
-              <div className="mt-4 w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                <div className="bg-blue-500 h-full w-[45%] rounded-full shadow-[0_0_10px_rgba(59,130,246,0.5)]"></div>
-              </div>
-            </div>
 
-            <div className="bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-800 relative overflow-hidden group">
-              <div className="flex justify-between items-start mb-4">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                  Avg Ticket
-                </p>
-                <div className="p-2 bg-emerald-500/10 text-emerald-400 rounded-lg group-hover:bg-emerald-500/20 transition-colors">
-                  <IconReceipt />
+              <div className="bg-slate-900 rounded-2xl shadow-sm border border-slate-800 flex flex-col overflow-hidden h-[400px]">
+                <div className="p-6 border-b border-slate-800 bg-slate-900">
+                  <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider">
+                    Recent Transactions
+                  </h3>
                 </div>
-              </div>
-              {loading && !data ? (
-                <Skeleton className="h-10 w-32" />
-              ) : (
-                <h3 className="text-3xl font-bold text-white tracking-tight">
-                  ${avgTicket}
-                </h3>
-              )}
-              <div className="mt-4 w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                <div className="bg-emerald-500 h-full w-[60%] rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)]"></div>
+                <div className="overflow-auto flex-1 custom-scrollbar">
+                  {loading && !data ? (
+                    <div className="p-6 space-y-4">
+                      <Skeleton className="h-10 w-full" />
+                      <Skeleton className="h-10 w-full" />
+                      <Skeleton className="h-10 w-full" />
+                    </div>
+                  ) : (
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-slate-950 text-[10px] text-slate-500 font-bold uppercase tracking-wider sticky top-0">
+                        <tr>
+                          <th className="px-6 py-3">Time</th>
+                          <th className="px-6 py-3">Ticket</th>
+                          <th className="px-6 py-3 text-right">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800">
+                        {data?.sales.slice(0, 50).map((sale, idx) => (
+                          <tr
+                            key={idx}
+                            className="hover:bg-slate-800/50 transition-colors"
+                          >
+                            <td className="px-6 py-3 text-slate-500 font-mono text-xs">
+                              {sale.saleOpenTime
+                                ? sale.saleOpenTime.substring(11, 16)
+                                : "--:--"}
+                            </td>
+                            <td className="px-6 py-3 font-medium text-slate-300">
+                              #{sale.ticketNo}
+                            </td>
+                            <td className="px-6 py-3 text-right font-bold text-white">
+                              ${parseCurrency(sale.netSalesStr).toFixed(2)}
+                            </td>
+                          </tr>
+                        ))}
+                        {(!data || data.sales.length === 0) && (
+                          <tr>
+                            <td
+                              colSpan={3}
+                              className="px-6 py-8 text-center text-slate-500 text-xs italic"
+                            >
+                              No data available for this range
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
               </div>
             </div>
           </div>
+        )}
 
-          {/* Charts Section */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-800 flex flex-col h-[400px]">
-              <h3 className="text-sm font-bold text-slate-300 mb-6 uppercase tracking-wider">
-                Hourly Sales Trend
-              </h3>
-              <div className="flex-1 w-full min-h-0">
-                {loading && !data ? (
-                  <Skeleton className="w-full h-full" />
-                ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart
-                      data={chartData}
-                      margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
-                    >
-                      <defs>
-                        <linearGradient
-                          id="colorSales"
-                          x1="0"
-                          y1="0"
-                          x2="0"
-                          y2="1"
-                        >
-                          <stop
-                            offset="5%"
-                            stopColor="#6366f1"
-                            stopOpacity={0.3}
-                          />
-                          <stop
-                            offset="95%"
-                            stopColor="#6366f1"
-                            stopOpacity={0}
-                          />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                        vertical={false}
-                        stroke="#1e293b"
-                      />
-                      <XAxis
-                        dataKey="time"
-                        axisLine={false}
-                        tickLine={false}
-                        tick={{ fill: "#64748b", fontSize: 11 }}
-                        dy={10}
-                        interval={3}
-                      />
-                      <YAxis
-                        axisLine={false}
-                        tickLine={false}
-                        tick={{ fill: "#64748b", fontSize: 11 }}
-                        tickFormatter={(val) => `$${val}`}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: "#0f172a",
-                          borderRadius: "12px",
-                          border: "1px solid #1e293b",
-                          color: "#fff",
-                          boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.5)",
-                        }}
-                        itemStyle={{ color: "#fff" }}
-                        cursor={{
-                          stroke: "#6366f1",
-                          strokeWidth: 1,
-                          strokeDasharray: "4 4",
-                        }}
-                      />
-                      <Area
-                        type="monotone"
-                        dataKey="netSales"
-                        stroke="#6366f1"
-                        strokeWidth={3}
-                        fillOpacity={1}
-                        fill="url(#colorSales)"
-                        activeDot={{ r: 6, strokeWidth: 0, fill: "#818cf8" }}
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                )}
-              </div>
+        {/* === VIEW: REPORTS === */}
+        {view === "REPORTS" && (
+          <div className="px-8 pb-8 space-y-6 max-w-[1600px] mx-auto h-[calc(100vh-250px)] flex flex-col">
+            {/* Tabs */}
+            <div className="flex gap-4 border-b border-slate-800 pb-1">
+              <button
+                onClick={() => setReportTab("MENU")}
+                className={`px-4 py-2 text-sm font-bold border-b-2 transition-colors ${
+                  reportTab === "MENU"
+                    ? "border-indigo-500 text-white"
+                    : "border-transparent text-slate-500 hover:text-slate-300"
+                }`}
+              >
+                Menu Performance
+              </button>
+              <button
+                onClick={() => setReportTab("DISCOUNTS")}
+                className={`px-4 py-2 text-sm font-bold border-b-2 transition-colors ${
+                  reportTab === "DISCOUNTS"
+                    ? "border-indigo-500 text-white"
+                    : "border-transparent text-slate-500 hover:text-slate-300"
+                }`}
+              >
+                Discounts Analysis
+              </button>
+              <button
+                onClick={() => setReportTab("STAFF")}
+                className={`px-4 py-2 text-sm font-bold border-b-2 transition-colors ${
+                  reportTab === "STAFF"
+                    ? "border-indigo-500 text-white"
+                    : "border-transparent text-slate-500 hover:text-slate-300"
+                }`}
+              >
+                Staff Sales
+              </button>
             </div>
 
-            <div className="bg-slate-900 rounded-2xl shadow-sm border border-slate-800 flex flex-col overflow-hidden h-[400px]">
-              <div className="p-6 border-b border-slate-800 bg-slate-900">
-                <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider">
-                  Recent Transactions
-                </h3>
-              </div>
-              <div className="overflow-auto flex-1 custom-scrollbar">
-                {loading && !data ? (
-                  <div className="p-6 space-y-4">
-                    <Skeleton className="h-10 w-full" />
-                    <Skeleton className="h-10 w-full" />
-                    <Skeleton className="h-10 w-full" />
-                  </div>
-                ) : (
+            {/* Tab Content: MENU */}
+            {reportTab === "MENU" && (
+              <div className="bg-slate-900 rounded-2xl shadow-sm border border-slate-800 overflow-hidden flex-1 flex flex-col">
+                <div className="p-4 border-b border-slate-800 bg-slate-900/50 flex justify-between items-center">
+                  <h3 className="text-sm font-bold text-slate-300">
+                    Item Sales Breakdown
+                  </h3>
+                  <span className="text-xs text-slate-500">
+                    Sorted by Gross Revenue
+                  </span>
+                </div>
+                <div className="overflow-auto flex-1 custom-scrollbar">
                   <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-950 text-[10px] text-slate-500 font-bold uppercase tracking-wider sticky top-0">
+                    <thead className="bg-slate-950 text-[10px] text-slate-500 font-bold uppercase tracking-wider sticky top-0 z-10 shadow-sm">
                       <tr>
-                        <th className="px-6 py-3">Time</th>
-                        <th className="px-6 py-3">Ticket</th>
-                        <th className="px-6 py-3 text-right">Amount</th>
+                        <th className="px-6 py-3">Item Name</th>
+                        <th className="px-6 py-3">Category</th>
+                        <th className="px-6 py-3 text-right">Qty</th>
+                        <th className="px-6 py-3 text-right">Gross Sales</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800">
-                      {data?.sales.slice(0, 10).map((sale, idx) => (
+                      {menuPerformance.map((item: any, idx) => (
                         <tr
                           key={idx}
                           className="hover:bg-slate-800/50 transition-colors"
                         >
-                          <td className="px-6 py-3 text-slate-500 font-mono text-xs">
-                            {sale.saleOpenTime.substring(11, 16)}
+                          <td className="px-6 py-3 font-medium text-slate-200">
+                            {item.menuName}
                           </td>
-                          <td className="px-6 py-3 font-medium text-slate-300">
-                            #{sale.ticketNo}
+                          <td className="px-6 py-3 text-slate-500 text-xs">
+                            {item.categoryName}
+                          </td>
+                          <td className="px-6 py-3 text-right text-slate-400 font-mono">
+                            {item.quantity}
                           </td>
                           <td className="px-6 py-3 text-right font-bold text-white">
-                            ${sale.grossReceiptStr}
+                            $
+                            {parseCurrency(item.totalGrossAmountStr).toFixed(2)}
                           </td>
                         </tr>
                       ))}
-                      {(!data || data.sales.length === 0) && (
+                      {menuPerformance.length === 0 && (
                         <tr>
                           <td
-                            colSpan={3}
-                            className="px-6 py-8 text-center text-slate-500 text-xs italic"
+                            colSpan={4}
+                            className="px-6 py-12 text-center text-slate-500 italic"
                           >
-                            No data available for this range
+                            No menu data available
                           </td>
                         </tr>
                       )}
                     </tbody>
                   </table>
-                )}
+                </div>
+              </div>
+            )}
+
+            {/* Tab Content: DISCOUNTS */}
+            {reportTab === "DISCOUNTS" && (
+              <div className="bg-slate-900 rounded-2xl shadow-sm border border-slate-800 overflow-hidden flex-1 flex flex-col">
+                <div className="p-4 border-b border-slate-800 bg-slate-900/50">
+                  <h3 className="text-sm font-bold text-slate-300">
+                    Discount Usage
+                  </h3>
+                </div>
+                <div className="overflow-auto flex-1 custom-scrollbar">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-950 text-[10px] text-slate-500 font-bold uppercase tracking-wider sticky top-0 z-10 shadow-sm">
+                      <tr>
+                        <th className="px-6 py-3">Discount Name</th>
+                        <th className="px-6 py-3">Reason</th>
+                        <th className="px-6 py-3">Applied By</th>
+                        <th className="px-6 py-3 text-right">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {data?.saleDetails
+                        .filter((d) => d.check !== "Total")
+                        .map((d, idx) => (
+                          <tr
+                            key={idx}
+                            className="hover:bg-slate-800/50 transition-colors"
+                          >
+                            <td className="px-6 py-3 font-medium text-slate-200">
+                              {d.discountName}
+                            </td>
+                            <td className="px-6 py-3 text-slate-500 text-xs">
+                              {d.reason || "-"}
+                            </td>
+                            <td className="px-6 py-3 text-slate-400 text-xs">
+                              {d.discountAppliedBy}
+                            </td>
+                            <td className="px-6 py-3 text-right font-bold text-amber-400">
+                              -${parseCurrency(d.discountAmtStr).toFixed(2)}
+                            </td>
+                          </tr>
+                        ))}
+                      {(!data?.saleDetails ||
+                        data.saleDetails.length === 0) && (
+                        <tr>
+                          <td
+                            colSpan={4}
+                            className="px-6 py-12 text-center text-slate-500 italic"
+                          >
+                            No discount data available
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Tab Content: STAFF */}
+            {reportTab === "STAFF" && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
+                <div className="bg-slate-900 rounded-2xl shadow-sm border border-slate-800 p-6">
+                  <h3 className="text-sm font-bold text-slate-300 mb-6 uppercase tracking-wider">
+                    Top Performers
+                  </h3>
+                  <ResponsiveContainer width="100%" height="90%">
+                    <BarChart
+                      data={staffPerformance.slice(0, 10)}
+                      layout="vertical"
+                      margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
+                    >
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        horizontal={true}
+                        vertical={false}
+                        stroke="#1e293b"
+                      />
+                      <XAxis type="number" hide />
+                      <YAxis
+                        dataKey="name"
+                        type="category"
+                        width={100}
+                        tick={{ fill: "#94a3b8", fontSize: 11 }}
+                      />
+                      <Tooltip
+                        cursor={{ fill: "#1e293b" }}
+                        contentStyle={{
+                          backgroundColor: "#0f172a",
+                          borderColor: "#334155",
+                          color: "#fff",
+                        }}
+                      />
+                      <Bar
+                        dataKey="sales"
+                        fill="#6366f1"
+                        radius={[0, 4, 4, 0]}
+                        barSize={20}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="bg-slate-900 rounded-2xl shadow-sm border border-slate-800 overflow-hidden flex flex-col">
+                  <div className="p-4 border-b border-slate-800">
+                    <h3 className="text-sm font-bold text-slate-300">
+                      Staff Sales Detail
+                    </h3>
+                  </div>
+                  <div className="overflow-auto flex-1 custom-scrollbar">
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-slate-950 text-[10px] text-slate-500 font-bold uppercase tracking-wider sticky top-0">
+                        <tr>
+                          <th className="px-6 py-3">Employee</th>
+                          <th className="px-6 py-3 text-right">Transactions</th>
+                          <th className="px-6 py-3 text-right">Total Sales</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800">
+                        {staffPerformance.map((s, idx) => (
+                          <tr key={idx} className="hover:bg-slate-800/50">
+                            <td className="px-6 py-3 font-medium text-slate-200">
+                              {s.name}
+                            </td>
+                            <td className="px-6 py-3 text-right text-slate-400">
+                              {s.count}
+                            </td>
+                            <td className="px-6 py-3 text-right font-bold text-white">
+                              ${s.sales.toFixed(2)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* === VIEW: SETTINGS === */}
+        {view === "SETTINGS" && (
+          <div className="px-8 pb-8 max-w-[800px] mx-auto">
+            <div className="bg-slate-900 rounded-2xl border border-slate-800 p-8 text-center space-y-4">
+              <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto text-slate-500">
+                <IconSettings />
+              </div>
+              <h3 className="text-xl font-bold text-white">
+                System Configuration
+              </h3>
+              <p className="text-slate-400">
+                Global settings and API configurations are managed by the
+                administrator.
+                <br />
+                Current Version:{" "}
+                <span className="text-indigo-400 font-mono">v2.4.1</span>
+              </p>
+              <div className="pt-4">
+                <button className="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-colors text-sm font-medium">
+                  Check for Updates
+                </button>
               </div>
             </div>
           </div>
-
-          <div className="text-center pb-2">
-            <p className="text-xs text-slate-600">
-              © 2024 LingaPOS. Confidential Data.
-            </p>
-          </div>
-        </div>
+        )}
       </main>
     </div>
   );
