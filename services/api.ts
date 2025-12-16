@@ -1,4 +1,4 @@
-import { USE_MOCK_DATA, BACKEND_URL } from '../constants';
+import { USE_MOCK_DATA } from '../constants';
 import { FetchedData, SaleOrder, Floor, StoreUser, MenuItemDetail, SaleSummary } from '../types';
 
 function formatDate(date: Date): string {
@@ -9,30 +9,18 @@ function formatDate(date: Date): string {
   return `${day}-${month}-${year}`;
 }
 
-// --- MOCK DATA ENGINE (Fallback) ---
-class SimulatedBackend {
-  // ... (Same mock logic as before, kept for fallback) ...
-  // Simplified for brevity in this update block, assume existing mock logic persists if not overwritten
-  // We will just implement the fetch and data generation call
-  
-  generateData(storeId: string, fromDate: Date, toDate: Date): FetchedData {
-      // Basic mock implementation to ensure type safety if needed
-      return {
-          sales: [], saleDetails: [], floors: [], users: [], menus: [], detailedMenu: [], saleSummary: [], totalGrossAmount: "0.00", isSimulated: true
-      };
-  }
-}
-const backend = new SimulatedBackend();
+// --- MOCK DATA FALLBACK ---
+// (Simplified mock implementation for offline fallback)
+const getMockData = (storeId: string): FetchedData => ({
+    sales: [], saleDetails: [], floors: [], users: [], menus: [], detailedMenu: [], saleSummary: [], totalGrossAmount: "0.00", isSimulated: true
+});
 
 async function fetchFromBackend(endpoint: string): Promise<any> {
-  // Always hit /api/proxy which is handled by our Node.js Express server
-  const response = await fetch('/api/proxy', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ 
-      endpoint: endpoint,
-      method: 'GET'
-    })
+  // We now call the local /api/v1/... routes which Vercel/Express handles
+  // These are GET requests, mirroring your working backend reference
+  const response = await fetch(`/api${endpoint}`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' }
   });
 
   if (!response.ok) {
@@ -42,7 +30,6 @@ async function fetchFromBackend(endpoint: string): Promise<any> {
         const json = JSON.parse(errorBody);
         errorMessage = json.message || json.error || errorMessage;
     } catch(e) {}
-
     throw new Error(errorMessage);
   }
 
@@ -50,25 +37,23 @@ async function fetchFromBackend(endpoint: string): Promise<any> {
 }
 
 export const fetchDashboardData = async (storeId: string, from: Date, to: Date, forceMock: boolean = false): Promise<FetchedData> => {
-  // If explicitly forcing mock data
   if (USE_MOCK_DATA || forceMock) {
     await new Promise(resolve => setTimeout(resolve, 800)); 
-    // In a real scenario, you'd paste the full mock generator here. 
-    // For this update, we trust the robust backend connection first.
-    return { ...backend.generateData(storeId, from, to), isSimulated: true };
+    return getMockData(storeId);
   }
 
   try {
     const formattedFrom = formatDate(from);
     const formattedTo = formatDate(to);
     
-    // Parallel fetching for speed
+    // Explicit endpoints mirroring the server.js routes
+    // Note: We don't include '/api' here because fetchFromBackend prepends it
     const endpoints = [
       `/v1/lingapos/store/${storeId}/getsale?fromDate=${formattedFrom}&toDate=${formattedTo}`,
       `/v1/lingapos/store/${storeId}/discountReport?dateOption=DR&fromDate=${formattedFrom}&toDate=${formattedTo}&selectedReportType=By Discount Type`,
       `/v1/lingapos/store/${storeId}/layout`,
       `/v1/lingapos/store/${storeId}/users`,
-      `/v1/lingapos/store/${storeId}/saleReport?dateOption=DR&employeeGroup=N&${formattedFrom}&toDate=${formattedTo}&isDetailedView=false&numberOfDay=&page=1&reportType=&selectedEmployee=&selectedItemId=&specificDate=&type=MENUITEM`,
+      `/v1/lingapos/store/${storeId}/saleReport?dateOption=DR&employeeGroup=N&fromDate=${formattedFrom}&toDate=${formattedTo}&isDetailedView=false&numberOfDay=&page=1&reportType=&selectedEmployee=&selectedItemId=&specificDate=&type=MENUITEM`,
       `/v1/lingapos/store/${storeId}/saleSummaryReport?dateOption=DR&fromDate=${formattedFrom}&toDate=${formattedTo}`,
     ];
 
@@ -107,6 +92,6 @@ export const fetchDashboardData = async (storeId: string, from: Date, to: Date, 
 
   } catch (err: any) {
     console.warn("Fetch failed:", err);
-    throw err; // Re-throw so the UI shows the real error
+    throw err; 
   }
 };
