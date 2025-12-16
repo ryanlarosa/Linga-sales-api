@@ -1,35 +1,59 @@
 import { db } from "./firebase";
-import { collection, getDocs, query, where, addDoc, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
+import { collection, getDocs, query, where, doc, setDoc, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
 import { User, Store } from "../types";
 import { MOCK_USERS, STORE_LIST } from "../constants";
+
+// --- DB INITIALIZATION ---
+
+export const initializeDatabase = async () => {
+  try {
+    console.log("Starting Database Initialization...");
+    
+    // 1. Seed Users (using username as ID to prevent duplicates)
+    for (const user of MOCK_USERS) {
+        await setDoc(doc(db, "users", user.username), user);
+    }
+    console.log("Users seeded.");
+
+    // 2. Seed Stores (using store ID as ID)
+    for (const store of STORE_LIST) {
+        await setDoc(doc(db, "stores", store.id), {
+            id: store.id,
+            name: store.name
+        });
+    }
+    console.log("Stores seeded.");
+    
+    return true;
+  } catch (error) {
+    console.error("Failed to initialize database:", error);
+    throw error;
+  }
+};
 
 // --- USERS ---
 
 export const loginUser = async (username: string, password: string): Promise<User | null> => {
   try {
     const usersRef = collection(db, "users");
-    // Querying for username only first
     const q = query(usersRef, where("username", "==", username));
     const querySnapshot = await getDocs(q);
 
     if (querySnapshot.empty) {
-      // If no users exist at all in DB, maybe we should check if we need to seed
-      // (This is a convenience for the first run)
+      // If DB is empty, try auto-seeding once
       const allUsers = await getDocs(usersRef);
       if (allUsers.empty) {
-          console.log("Database empty. Seeding mock users...");
-          await seedUsers();
-          // Retry login after seeding
+          console.log("Database appears empty. Auto-seeding...");
+          await initializeDatabase();
           return loginUser(username, password);
       }
       return null;
     }
 
-    // Client-side password check (since we are not using Firebase Auth)
-    // In production, use Firebase Authentication!
     let foundUser: User | null = null;
     querySnapshot.forEach((doc: QueryDocumentSnapshot<DocumentData>) => {
       const userData = doc.data();
+      // Simple client-side password check
       if (userData.password === password) {
         foundUser = {
           username: userData.username,
@@ -43,8 +67,7 @@ export const loginUser = async (username: string, password: string): Promise<Use
     return foundUser;
   } catch (error) {
     console.error("Error logging in:", error);
-    // Fallback to MOCK_USERS if Firestore fails (e.g. offline/permission)
-    console.warn("Falling back to local mock users due to error.");
+    // Fallback to MOCK constants if Firestore connection fails completely
     const mock = MOCK_USERS.find(u => u.username === username && u.password === password);
     if(mock) {
         return {
@@ -58,13 +81,6 @@ export const loginUser = async (username: string, password: string): Promise<Use
   }
 };
 
-const seedUsers = async () => {
-    const usersRef = collection(db, "users");
-    for (const user of MOCK_USERS) {
-        await addDoc(usersRef, user);
-    }
-};
-
 // --- STORES ---
 
 export const getStores = async (): Promise<Store[]> => {
@@ -73,18 +89,15 @@ export const getStores = async (): Promise<Store[]> => {
     const snapshot = await getDocs(storesRef);
 
     if (snapshot.empty) {
-        console.log("No stores found in DB. Seeding...");
-        await seedStores();
+        await initializeDatabase();
         return STORE_LIST;
     }
 
     const stores: Store[] = [];
     snapshot.forEach((doc: QueryDocumentSnapshot<DocumentData>) => {
       const data = doc.data();
-      // Ensure we map the firestore fields correctly
-      // We assume the document has 'name' and 'id' fields
       stores.push({
-        id: data.id || doc.id,
+        id: data.id,
         name: data.name
       });
     });
@@ -92,17 +105,6 @@ export const getStores = async (): Promise<Store[]> => {
     return stores;
   } catch (error) {
     console.error("Error fetching stores:", error);
-    return STORE_LIST; // Fallback
+    return STORE_LIST; 
   }
-};
-
-const seedStores = async () => {
-    const storesRef = collection(db, "stores");
-    for (const store of STORE_LIST) {
-        // We save the 'id' field explicitly so it matches the API requirements
-        await addDoc(storesRef, {
-            name: store.name,
-            id: store.id 
-        });
-    }
 };

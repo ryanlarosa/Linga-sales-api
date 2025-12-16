@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { User } from '../types';
-import { loginUser } from '../services/firestoreService';
+import { loginUser, initializeDatabase } from '../services/firestoreService';
 
 interface LoginScreenProps {
   onLogin: (user: User) => void;
@@ -11,11 +11,13 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState('');
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setMsg('');
     
     try {
         const user = await loginUser(username, password);
@@ -25,10 +27,25 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
             setError('Invalid credentials.');
         }
     } catch (err) {
-        setError('Connection failed. Please try again.');
+        setError('Connection failed. Please check your internet.');
     } finally {
         setLoading(false);
     }
+  };
+
+  const handleInitDB = async () => {
+      if(!confirm("This will populate the database with default Users and Stores. Continue?")) return;
+      setLoading(true);
+      setMsg("Building Database...");
+      try {
+          await initializeDatabase();
+          setMsg("Database initialized! You can now log in.");
+          setError("");
+      } catch (e) {
+          setError("Failed to initialize DB. Check console/permissions.");
+      } finally {
+          setLoading(false);
+      }
   };
 
   return (
@@ -76,6 +93,13 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
                     </div>
                 )}
 
+                {msg && (
+                    <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs p-3 rounded-lg flex items-center gap-2 animate-bounce-in">
+                        <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                        {msg}
+                    </div>
+                )}
+
                 <button
                     type="submit"
                     disabled={loading}
@@ -94,6 +118,9 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
                 <p className="text-xs text-slate-600">
                     Restricted Access. Authorized Personnel Only.
                 </p>
+                <button onClick={handleInitDB} className="mt-4 text-[10px] text-slate-700 hover:text-indigo-400 transition-colors uppercase tracking-widest">
+                    Initialize Database
+                </button>
             </div>
         </div>
         <p className="text-center text-slate-600 text-[10px] mt-8 uppercase tracking-widest opacity-50">LingaPOS Analytics v2.5</p>
