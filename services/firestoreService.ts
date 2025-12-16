@@ -1,5 +1,5 @@
 import { db } from "./firebase";
-import { collection, getDocs, query, where, addDoc } from "firebase/firestore";
+import { collection, getDocs, query, where, addDoc, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
 import { User, Store } from "../types";
 import { MOCK_USERS, STORE_LIST } from "../constants";
 
@@ -28,7 +28,7 @@ export const loginUser = async (username: string, password: string): Promise<Use
     // Client-side password check (since we are not using Firebase Auth)
     // In production, use Firebase Authentication!
     let foundUser: User | null = null;
-    querySnapshot.forEach((doc) => {
+    querySnapshot.forEach((doc: QueryDocumentSnapshot<DocumentData>) => {
       const userData = doc.data();
       if (userData.password === password) {
         foundUser = {
@@ -79,7 +79,7 @@ export const getStores = async (): Promise<Store[]> => {
     }
 
     const stores: Store[] = [];
-    snapshot.forEach((doc) => {
+    snapshot.forEach((doc: QueryDocumentSnapshot<DocumentData>) => {
       const data = doc.data();
       // Ensure we map the firestore fields correctly
       // We assume the document has 'name' and 'id' fields
