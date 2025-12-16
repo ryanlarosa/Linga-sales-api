@@ -3,19 +3,37 @@ import { collection, getDocs, query, where, doc, setDoc, QueryDocumentSnapshot, 
 import { User, Store } from "../types";
 import { MOCK_USERS, STORE_LIST } from "../constants";
 
+// Helper to check if error is due to missing DB setup in Console
+const isMissingDbError = (error: any) => {
+    return error?.code === 'not-found' || 
+           (error?.message && error.message.includes('database (default) does not exist'));
+};
+
 // --- DB INITIALIZATION ---
 
 export const initializeDatabase = async () => {
   try {
     console.log("Starting Database Initialization...");
     
-    // 1. Seed Users (using username as ID to prevent duplicates)
+    // Check connection by trying to write one user first
+    try {
+        await setDoc(doc(db, "users", MOCK_USERS[0].username), MOCK_USERS[0]);
+    } catch (e: any) {
+        if (isMissingDbError(e)) {
+            throw new Error("FIRESTORE NOT SETUP: Please go to the Firebase Console, select 'Firestore Database' and click 'Create Database'.");
+        }
+        throw e;
+    }
+    
+    // 1. Seed Remaining Users
     for (const user of MOCK_USERS) {
-        await setDoc(doc(db, "users", user.username), user);
+        if(user.username !== MOCK_USERS[0].username) {
+             await setDoc(doc(db, "users", user.username), user);
+        }
     }
     console.log("Users seeded.");
 
-    // 2. Seed Stores (using store ID as ID)
+    // 2. Seed Stores
     for (const store of STORE_LIST) {
         await setDoc(doc(db, "stores", store.id), {
             id: store.id,
@@ -25,7 +43,7 @@ export const initializeDatabase = async () => {
     console.log("Stores seeded.");
     
     return true;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Failed to initialize database:", error);
     throw error;
   }
@@ -37,10 +55,12 @@ export const loginUser = async (username: string, password: string): Promise<Use
   try {
     const usersRef = collection(db, "users");
     const q = query(usersRef, where("username", "==", username));
+    
+    // We try to fetch. If the DB doesn't exist, this throws.
     const querySnapshot = await getDocs(q);
 
     if (querySnapshot.empty) {
-      // If DB is empty, try auto-seeding once
+      // If DB exists but is empty, try seeding
       const allUsers = await getDocs(usersRef);
       if (allUsers.empty) {
           console.log("Database appears empty. Auto-seeding...");
@@ -53,7 +73,6 @@ export const loginUser = async (username: string, password: string): Promise<Use
     let foundUser: User | null = null;
     querySnapshot.forEach((doc: QueryDocumentSnapshot<DocumentData>) => {
       const userData = doc.data();
-      // Simple client-side password check
       if (userData.password === password) {
         foundUser = {
           username: userData.username,
@@ -66,8 +85,14 @@ export const loginUser = async (username: string, password: string): Promise<Use
 
     return foundUser;
   } catch (error) {
-    console.error("Error logging in:", error);
-    // Fallback to MOCK constants if Firestore connection fails completely
+    // Graceful fallback without scary console errors if it's just missing setup
+    if (isMissingDbError(error)) {
+        console.warn("Firestore not configured. Using local mock users.");
+    } else {
+        console.error("Error logging in via Firestore:", error);
+    }
+
+    // Fallback to MOCK_USERS
     const mock = MOCK_USERS.find(u => u.username === username && u.password === password);
     if(mock) {
         return {
@@ -89,6 +114,7 @@ export const getStores = async (): Promise<Store[]> => {
     const snapshot = await getDocs(storesRef);
 
     if (snapshot.empty) {
+        // Only try seeding if we didn't crash on getDocs
         await initializeDatabase();
         return STORE_LIST;
     }
@@ -104,7 +130,11 @@ export const getStores = async (): Promise<Store[]> => {
     
     return stores;
   } catch (error) {
-    console.error("Error fetching stores:", error);
+    if (isMissingDbError(error)) {
+        console.warn("Firestore not configured. Using local store list.");
+    } else {
+        console.error("Error fetching stores:", error);
+    }
     return STORE_LIST; 
   }
 };
