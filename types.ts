@@ -1,9 +1,10 @@
+
 export interface User {
   username: string;
   password?: string;
-  role: "superuser" | "admin" | "user";
+  role: 'superuser' | 'admin' | 'user'; 
   name?: string;
-  allowedStores?: string[];
+  allowedStores?: string[]; 
 }
 
 export interface Store {
@@ -14,28 +15,28 @@ export interface Store {
 export interface SaleOrder {
   id: string;
   ticketNo: string;
-  startDate: string;
+  startDate: string; 
   saleOpenTime: string;
   customerName: string;
   tableNo: string;
   floorId: string;
-  employee: string;
-  saleCloseEmployee: string;
+  employee: string; 
+  saleCloseEmployee: string; 
   guestCount: number;
   netSalesStr: string;
   grossAmountStr: string;
   totalTaxAmountStr: string;
   grossReceiptStr: string;
-  payments?: {
-    paymentMethod: string;
-    authorizedAmountStr: string;
-    paymentTipStr: string;
+  payments?: { 
+    paymentMethod: string, 
+    authorizedAmountStr: string, 
+    paymentTipStr: string 
   }[];
   orders?: MenuItemDetail[];
 }
 
 export interface SaleSummary {
-  id: string;
+  id: string; 
   netSales: string;
   discounts: string;
   totalTaxAmount: string;
@@ -44,7 +45,7 @@ export interface SaleSummary {
 
 export interface DiscountDetail {
   id: string;
-  check: string;
+  check: string; 
   approvedBy: string;
   date: string;
   discountAmtStr: string;
@@ -101,10 +102,10 @@ export interface FetchedData {
   saleDetails: DiscountDetail[];
   floors: Floor[];
   users: StoreUser[];
-  menus: any[];
+  menus: any[]; 
   detailedMenu: MenuItemDetail[];
   totalGrossAmount: string;
   saleSummary: SaleSummary[];
-  paymentSummary?: PaymentSummaryItem[];
-  isSimulated?: boolean;
+  paymentSummary?: PaymentSummaryItem[]; 
+  isSimulated?: boolean; 
 }

@@ -1,20 +1,18 @@
-import React, { useState, useMemo, useRef } from "react";
-import { FetchedData } from "../../types";
-import { exportAnalysisToExcel } from "../../services/excelService";
-import {
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from "recharts";
-import html2canvas from "html2canvas";
-import { jsPDF } from "jspdf";
+
+import React, { useState, useMemo, useRef } from 'react';
+import { FetchedData } from '../../types';
+import { exportAnalysisToExcel } from '../../services/excelService';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
+
+// Sub-components
+import { parseCurrency } from './Reports/ReportUtils';
+import DSRRecap from './Reports/DSRRecap';
+import StaffMetrics from './Reports/StaffMetrics';
+import VoidLog from './Reports/VoidLog';
+import DiscountLedger from './Reports/DiscountLedger';
+import PivotAnalysis from './Reports/PivotAnalysis';
+import ItemPerformance from './Reports/ItemPerformance';
 
 interface ReportsProps {
   data: FetchedData | null;
@@ -23,72 +21,31 @@ interface ReportsProps {
   selectedStoreName: string;
 }
 
-type AnalysisDimension = "CATEGORY" | "DEPARTMENT" | "HOUR" | "FLOOR";
-const COLORS = [
-  "#0f172a",
-  "#334155",
-  "#475569",
-  "#64748b",
-  "#94a3b8",
-  "#1e293b",
-  "#020617",
-  "#111827",
-];
+type AnalysisDimension = 'CATEGORY' | 'DEPARTMENT' | 'HOUR' | 'FLOOR';
 
-const parseCurrency = (val: string | undefined | number): number => {
-  if (val === undefined || val === null) return 0;
-  if (typeof val === "number") return val;
-  const clean = String(val).replace(/[$,\s]/g, "");
-  return parseFloat(clean) || 0;
-};
-
-const formatAED = (num: number) => {
-  return (
-    num.toLocaleString("en-AE", {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }) + " AED"
-  );
-};
-
-const ReportsModule: React.FC<ReportsProps> = ({
-  data,
-  fromDate,
-  toDate,
-  selectedStoreName,
-}) => {
-  const [tab, setTab] = useState<
-    "RECAP" | "ANALYSIS" | "MENU" | "STAFF" | "VOIDS" | "DISCOUNTS"
-  >("RECAP");
-  const [analysisDim, setAnalysisDim] = useState<AnalysisDimension>("CATEGORY");
+const ReportsModule: React.FC<ReportsProps> = ({ data, fromDate, toDate, selectedStoreName }) => {
+  const [tab, setTab] = useState<'RECAP' | 'ANALYSIS' | 'MENU' | 'STAFF' | 'VOIDS' | 'DISCOUNTS'>('RECAP');
+  const [analysisDim, setAnalysisDim] = useState<AnalysisDimension>('CATEGORY');
   const [operationalTarget, setOperationalTarget] = useState<number>(0);
-  const [modName, setModName] = useState("MANAGER");
-  const [bohName, setBohName] = useState("CHEF");
+  const [modName, setModName] = useState('MANAGER');
+  const [bohName, setBohName] = useState('CHEF');
   const [exporting, setExporting] = useState(false);
   const recapRef = useRef<HTMLDivElement>(null);
 
   // --- DERIVED DATA ---
   const dsrStats = useMemo(() => {
     if (!data || !data.sales || data.sales.length === 0) return null;
-    let grossReceiptSum = 0;
-    let net = 0;
-    let tax = 0;
-    let discTotal = 0;
-    let guestCount = 0;
-
-    const segments: Record<
-      string,
-      { revenue: number; covers: number; checks: number }
-    > = {
-      Breakfast: { revenue: 0, covers: 0, checks: 0 },
-      Lunch: { revenue: 0, covers: 0, checks: 0 },
-      Dinner: { revenue: 0, covers: 0, checks: 0 },
-      Other: { revenue: 0, covers: 0, checks: 0 },
+    let grossReceiptSum = 0; let net = 0; let tax = 0; let discTotal = 0; let guestCount = 0;
+    
+    const segments: Record<string, { revenue: number, covers: number, checks: number }> = { 
+      Breakfast: { revenue: 0, covers: 0, checks: 0 }, 
+      Lunch: { revenue: 0, covers: 0, checks: 0 }, 
+      Dinner: { revenue: 0, covers: 0, checks: 0 }, 
+      Other: { revenue: 0, covers: 0, checks: 0 } 
     };
 
-    data.sales.forEach((s) => {
+    data.sales.forEach(s => {
       const netVal = parseCurrency(s.netSalesStr);
-      // As requested: Get Gross Revenue data from GrossReceipt total
       const grossReceipt = parseCurrency(s.grossReceiptStr);
       net += netVal;
       grossReceiptSum += grossReceipt;
@@ -96,159 +53,121 @@ const ReportsModule: React.FC<ReportsProps> = ({
       guestCount += s.guestCount;
 
       const dateObj = new Date(s.saleOpenTime);
-      const h = isNaN(dateObj.getTime())
-        ? parseInt(s.saleOpenTime.split(":")[0])
-        : dateObj.getHours();
-
-      let seg = "Other";
-      if (h >= 6 && h < 11) seg = "Breakfast";
-      else if (h >= 11 && h < 16) seg = "Lunch";
-      else if (h >= 16 && h < 24) seg = "Dinner";
+      const h = isNaN(dateObj.getTime()) ? parseInt(s.saleOpenTime.split(':')[0]) : dateObj.getHours();
+      
+      let seg = 'Other';
+      if (h >= 6 && h < 11) seg = 'Breakfast';
+      else if (h >= 11 && h < 16) seg = 'Lunch';
+      else if (h >= 16 && h < 24) seg = 'Dinner';
 
       segments[seg].revenue += netVal;
       segments[seg].covers += s.guestCount;
       segments[seg].checks += 1;
     });
 
-    data.saleDetails.forEach((d) => {
-      if (d.check !== "Total") discTotal += parseCurrency(d.discountAmtStr);
+    data.saleDetails.forEach(d => {
+      if (d.check !== 'Total') discTotal += parseCurrency(d.discountAmtStr);
     });
 
     const categories = { Food: 0, NonAlc: 0, Alc: 0, Retail: 0 };
-    data.detailedMenu.forEach((m) => {
-      const val = parseCurrency(m.totalGrossAmountStr);
-      const dept = (m.departmentName || "").toLowerCase();
-      if (dept.includes("food")) categories.Food += val;
-      else if (dept.includes("bev") || dept.includes("drink")) {
-        if (dept.includes("wine") || dept.includes("alc"))
-          categories.Alc += val;
-        else categories.NonAlc += val;
-      } else {
-        categories.Retail += val;
-      }
+    data.detailedMenu.forEach(m => {
+        const val = parseCurrency(m.totalGrossAmountStr);
+        const dept = (m.departmentName || '').toLowerCase();
+        if (dept.includes('food')) categories.Food += val;
+        else if (dept.includes('bev') || dept.includes('drink')) {
+            if (dept.includes('wine') || dept.includes('alc')) categories.Alc += val;
+            else categories.NonAlc += val;
+        } else {
+            categories.Retail += val;
+        }
     });
 
-    const avgGuest = guestCount > 0 ? net / guestCount : 0;
+    const avgGuest = guestCount > 0 ? (net / guestCount) : 0;
 
-    return {
-      gross: grossReceiptSum,
-      net,
-      tax,
-      discTotal,
-      guestCount,
-      avgGuest,
-      segments,
-      categories,
-      checks: data.sales.length,
+    return { 
+      gross: grossReceiptSum, net, tax, discTotal, guestCount, avgGuest,
+      segments, categories,
+      checks: data.sales.length
     };
   }, [data]);
 
   const staffMetrics = useMemo(() => {
     if (!data) return [];
-    const map = new Map<
-      string,
-      { name: string; netSales: number; checks: number; covers: number }
-    >();
-    data.sales.forEach((sale) => {
-      const empName =
-        data.users.find((u) => u.id === sale.employee)?.name || "Unknown";
-      const curr = map.get(empName) || {
-        name: empName,
-        netSales: 0,
-        checks: 0,
-        covers: 0,
-      };
-      curr.netSales += parseCurrency(sale.netSalesStr);
-      curr.checks += 1;
-      curr.covers += sale.guestCount || 0;
-      map.set(empName, curr);
+    const map = new Map<string, { name: string, netSales: number, checks: number, covers: number }>();
+    data.sales.forEach(sale => {
+        const empName = data.users.find(u => u.id === sale.employee)?.name || "Unknown";
+        const curr = map.get(empName) || { name: empName, netSales: 0, checks: 0, covers: 0 };
+        curr.netSales += parseCurrency(sale.netSalesStr);
+        curr.checks += 1;
+        curr.covers += (sale.guestCount || 0);
+        map.set(empName, curr);
     });
-    return Array.from(map.values()).sort((a, b) => b.netSales - a.netSales);
+    return Array.from(map.values()).sort((a,b) => b.netSales - a.netSales);
   }, [data]);
 
   const voidsData = useMemo(() => {
     if (!data) return [];
-    return data.detailedMenu.filter(
-      (item) => item.isVoid === "Y" || item.isVoid === "true"
-    );
+    return data.detailedMenu.filter(item => item.isVoid === 'Y' || item.isVoid === 'true');
   }, [data]);
 
   const discountLedger = useMemo(() => {
     if (!data) return [];
-    return data.saleDetails.filter((d) => d.check !== "Total");
+    return data.saleDetails.filter(d => d.check !== 'Total');
   }, [data]);
 
   const menuPerformance = useMemo(() => {
-    if (!data) return [];
-    const map = new Map<
-      string,
-      { name: string; value: number; count: number }
-    >();
-    data.detailedMenu.forEach((m) => {
-      const curr = map.get(m.menuName) || {
-        name: m.menuName,
-        value: 0,
-        count: 0,
-      };
-      curr.value += parseCurrency(m.totalGrossAmountStr);
-      curr.count += m.quantity;
-      map.set(m.menuName, curr);
+    if(!data) return [];
+    const map = new Map<string, { name: string, value: number, count: number }>();
+    data.detailedMenu.forEach(m => {
+        const curr = map.get(m.menuName) || { name: m.menuName, value: 0, count: 0 };
+        curr.value += parseCurrency(m.totalGrossAmountStr);
+        curr.count += m.quantity;
+        map.set(m.menuName, curr);
     });
-    return Array.from(map.values()).sort((a, b) => b.value - a.value);
+    return Array.from(map.values()).sort((a,b) => b.value - a.value);
   }, [data]);
-
-  const variance = dsrStats ? dsrStats.net - operationalTarget : 0;
-  const variancePct =
-    operationalTarget > 0 ? (variance / operationalTarget) * 100 : 0;
 
   const flexibleData = useMemo(() => {
     if (!data) return [];
-    const map = new Map<
-      string,
-      { name: string; value: number; count: number }
-    >();
-    if (analysisDim === "FLOOR") {
-      data.sales.forEach((sale) => {
-        const floor =
-          data.floors.find((f) => f.id === sale.floorId)?.floorName || "Other";
+    const map = new Map<string, { name: string, value: number, count: number }>();
+    if (analysisDim === 'FLOOR') {
+      data.sales.forEach(sale => {
+        const floor = data.floors.find(f => f.id === sale.floorId)?.floorName || "Other";
         const curr = map.get(floor) || { name: floor, value: 0, count: 0 };
-        curr.value += parseCurrency(sale.netSalesStr);
-        curr.count += 1;
+        curr.value += parseCurrency(sale.netSalesStr); curr.count += 1;
         map.set(floor, curr);
       });
     } else {
-      data.detailedMenu.forEach((item) => {
+      data.detailedMenu.forEach(item => {
         let key = item.categoryName || "Uncategorized";
-        if (analysisDim === "DEPARTMENT")
-          key = item.departmentName || "No Dept";
-        if (analysisDim === "HOUR") key = `${parseInt(item.orderHour)}:00`;
+        if (analysisDim === 'DEPARTMENT') key = item.departmentName || "No Dept";
+        if (analysisDim === 'HOUR') key = `${parseInt(item.orderHour)}:00`;
         const curr = map.get(key) || { name: key, value: 0, count: 0 };
-        curr.value += parseCurrency(item.grossAmountStr);
-        curr.count += item.quantity || 0;
+        curr.value += parseCurrency(item.grossAmountStr); curr.count += (item.quantity || 0);
         map.set(key, curr);
       });
     }
-    return Array.from(map.values()).sort((a, b) => b.value - a.value);
+    return Array.from(map.values()).sort((a,b) => b.value - a.value);
   }, [data, analysisDim]);
 
   const handleExportPDF = async () => {
     if (!recapRef.current) return;
     setExporting(true);
     try {
-      const isDark = document.documentElement.classList.contains("dark");
+      const isDark = document.documentElement.classList.contains('dark');
       const canvas = await html2canvas(recapRef.current, {
-        backgroundColor: isDark ? "#020617" : "#f8fafc",
+        backgroundColor: isDark ? '#020617' : '#f8fafc',
         scale: 2,
         useCORS: true,
         logging: false,
       });
-      const imgData = canvas.toDataURL("image/png");
+      const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF({
-        orientation: "landscape",
-        unit: "px",
-        format: [canvas.width, canvas.height],
+        orientation: 'landscape',
+        unit: 'px',
+        format: [canvas.width, canvas.height]
       });
-      pdf.addImage(imgData, "PNG", 0, 0, canvas.width, canvas.height);
+      pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
       pdf.save(`DSR_Recap_${selectedStoreName}_${fromDate}.pdf`);
     } catch (err) {
       console.error("PDF Export Failed:", err);
@@ -257,50 +176,31 @@ const ReportsModule: React.FC<ReportsProps> = ({
     }
   };
 
-  const handleExportTab = () => {
-    if (!data) return;
-    if (tab === "ANALYSIS")
-      exportAnalysisToExcel(flexibleData, analysisDim, selectedStoreName);
-    if (tab === "MENU")
-      exportAnalysisToExcel(menuPerformance, "MenuItem", selectedStoreName);
+  const handlePivotExport = () => {
+    if(!data) return;
+    exportAnalysisToExcel(flexibleData, analysisDim, selectedStoreName);
   };
 
-  const dayName = new Date(fromDate).toLocaleDateString("en-AE", {
-    weekday: "long",
-  });
-
-  const totalTips = useMemo(() => {
-    if (!data || !data.paymentSummary) return 0;
-    return data.paymentSummary.reduce((acc, p) => acc + (p.tips || 0), 0);
-  }, [data]);
-
-  const totalSettledWithTips = useMemo(() => {
-    if (!data || !data.paymentSummary) return dsrStats?.gross || 0;
-    return data.paymentSummary.reduce(
-      (acc, p) => acc + (p.amount || 0) + (p.tips || 0),
-      0
-    );
-  }, [data, dsrStats]);
+  const handleMenuExport = () => {
+    if(!data) return;
+    exportAnalysisToExcel(menuPerformance, "MenuItem", selectedStoreName);
+  };
 
   return (
     <div className="px-8 space-y-6 max-w-[1600px] mx-auto animate-fadeIn flex flex-col h-[calc(100vh-140px)] transition-colors duration-300">
       <div className="flex gap-4 border-b border-slate-200 dark:border-slate-800 pb-1 overflow-x-auto custom-scrollbar transition-colors">
         {[
-          { id: "RECAP", label: "DSR Recap" },
-          { id: "ANALYSIS", label: "Pivot Table" },
-          { id: "MENU", label: "Item Performance" },
-          { id: "STAFF", label: "Staff Metrics" },
-          { id: "VOIDS", label: "Void Log" },
-          { id: "DISCOUNTS", label: "Discount Ledger" },
-        ].map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id as any)}
-            className={`px-4 py-2 text-sm font-bold border-b-2 transition-all whitespace-nowrap ${
-              tab === t.id
-                ? "border-slate-900 dark:border-rose-500 text-slate-900 dark:text-rose-400"
-                : "border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-            }`}
+          { id: 'RECAP', label: 'DSR Recap' },
+          { id: 'ANALYSIS', label: 'Pivot Table' },
+          { id: 'MENU', label: 'Item Performance' },
+          { id: 'STAFF', label: 'Staff Metrics' },
+          { id: 'VOIDS', label: 'Void Log' },
+          { id: 'DISCOUNTS', label: 'Discount Ledger' }
+        ].map(t => (
+          <button 
+            key={t.id} 
+            onClick={() => setTab(t.id as any)} 
+            className={`px-4 py-2 text-sm font-bold border-b-2 transition-all whitespace-nowrap ${tab === t.id ? 'border-slate-900 dark:border-rose-500 text-slate-900 dark:text-rose-400' : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
           >
             {t.label}
           </button>
@@ -314,749 +214,46 @@ const ReportsModule: React.FC<ReportsProps> = ({
         </div>
       )}
 
-      {data && (
+      {data && dsrStats && (
         <div className="flex-1 overflow-auto custom-scrollbar pb-10">
-          {tab === "RECAP" && dsrStats && (
-            <div
-              className="flex flex-col gap-6 animate-fadeIn pb-12"
+          {tab === 'RECAP' && (
+            <DSRRecap 
               ref={recapRef}
-            >
-              {/* EXECUTIVE HEADER GRID */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
-                  <h4 className="text-[10px] font-black uppercase text-white bg-[#001f3f] px-4 py-2">
-                    Report Context
-                  </h4>
-                  <div className="p-4 space-y-2">
-                    <div className="flex justify-between border-b border-slate-50 dark:border-slate-800 pb-1">
-                      <span className="text-[11px] font-bold text-slate-400 uppercase">
-                        For the Day
-                      </span>
-                      <span className="text-[11px] font-black text-slate-900 dark:text-white">
-                        {fromDate}
-                      </span>
-                    </div>
-                    <div className="flex justify-between border-b border-slate-50 dark:border-slate-800 pb-1">
-                      <span className="text-[11px] font-bold text-slate-400 uppercase">
-                        Day
-                      </span>
-                      <span className="text-[11px] font-black text-slate-900 dark:text-white">
-                        {dayName}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[11px] font-bold text-slate-400 uppercase">
-                        Store
-                      </span>
-                      <span className="text-[11px] font-black text-rose-600">
-                        {selectedStoreName}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
-                  <h4 className="text-[10px] font-black uppercase text-white bg-[#001f3f] px-4 py-2">
-                    Management
-                  </h4>
-                  <div className="p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-slate-400 uppercase">
-                        MOD
-                      </span>
-                      <input
-                        value={modName}
-                        onChange={(e) => setModName(e.target.value)}
-                        className="text-[11px] font-black text-right bg-transparent border-b border-dashed border-slate-200 focus:border-rose-500 outline-none w-24 no-print"
-                      />
-                      <span className="text-[11px] font-black text-right print-only hidden">
-                        {modName}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-slate-400 uppercase">
-                        BOH
-                      </span>
-                      <input
-                        value={bohName}
-                        onChange={(e) => setBohName(e.target.value)}
-                        className="text-[11px] font-black text-right bg-transparent border-b border-dashed border-slate-200 focus:border-rose-500 outline-none w-24 no-print"
-                      />
-                      <span className="text-[11px] font-black text-right print-only hidden">
-                        {bohName}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
-                  <h4 className="text-[10px] font-black uppercase text-white bg-[#001f3f] px-4 py-2">
-                    Revenue Overview
-                  </h4>
-                  <div className="p-4 space-y-2">
-                    <div className="flex justify-between border-b border-slate-50 dark:border-slate-800 pb-1">
-                      <span className="text-[11px] font-bold text-slate-400 uppercase">
-                        Gross - Day
-                      </span>
-                      <span className="text-[11px] font-black text-slate-900 dark:text-white">
-                        {formatAED(dsrStats.gross)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[11px] font-bold text-slate-400 uppercase">
-                        Net - Day
-                      </span>
-                      <span className="text-[11px] font-black text-rose-600">
-                        {formatAED(dsrStats.net)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-                <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-all">
-                  <p className="text-[9px] font-black uppercase text-slate-400 mb-1 tracking-widest">
-                    Gross Revenue (Receipt)
-                  </p>
-                  <h3 className="text-xl font-black text-slate-900 dark:text-white">
-                    {formatAED(dsrStats.gross)}
-                  </h3>
-                </div>
-                <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-all">
-                  <p className="text-[9px] font-black uppercase text-slate-400 mb-1 tracking-widest">
-                    Total Tax
-                  </p>
-                  <h3 className="text-xl font-black text-slate-600 dark:text-slate-300">
-                    {formatAED(dsrStats.tax)}
-                  </h3>
-                </div>
-                <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-all">
-                  <p className="text-[9px] font-black uppercase text-slate-400 mb-1 tracking-widest">
-                    Discount
-                  </p>
-                  <h3 className="text-xl font-black text-slate-700 dark:text-slate-200">
-                    {formatAED(dsrStats.discTotal)}
-                  </h3>
-                </div>
-                <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-all">
-                  <p className="text-[9px] font-black uppercase text-slate-400 mb-1 tracking-widest">
-                    Checks / Covers
-                  </p>
-                  <h3 className="text-xl font-black text-slate-900 dark:text-white">
-                    {dsrStats.checks} / {dsrStats.guestCount}
-                  </h3>
-                  <p className="text-[9px] text-slate-400 mt-0.5 uppercase font-bold tracking-tight">
-                    Avg {formatAED(dsrStats.avgGuest)}
-                  </p>
-                </div>
-                <div className="bg-slate-900 text-white p-4 rounded-xl shadow-lg border border-slate-800">
-                  <p className="text-[9px] font-black uppercase text-slate-400 mb-1 tracking-widest">
-                    Net Sales
-                  </p>
-                  <h3 className="text-xl font-black">
-                    {formatAED(dsrStats.net)}
-                  </h3>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden shadow-sm h-fit">
-                  <h4 className="text-[10px] font-black uppercase text-white bg-[#001f3f] px-4 py-3">
-                    Net Revenue Split - Venue Level
-                  </h4>
-                  <table className="w-full text-[11px]">
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      <tr className="bg-slate-50 dark:bg-slate-950/40 font-black">
-                        <td className="px-4 py-4">Actual (Today)</td>
-                        <td className="px-4 py-4 text-right text-base text-rose-600">
-                          {formatAED(dsrStats.net)}
-                        </td>
-                        <td className="px-4 py-4 text-right text-base">
-                          <div className="flex flex-col text-[10px] text-slate-500 text-right">
-                            <span className="font-bold">
-                              {dsrStats.checks} Checks
-                            </span>
-                            <span className="font-bold">
-                              {dsrStats.guestCount} Covers
-                            </span>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr className="font-bold">
-                        <td className="px-4 py-4 text-slate-400 uppercase tracking-tighter">
-                          Operational Target
-                        </td>
-                        <td className="px-4 py-4 text-right">
-                          <input
-                            type="number"
-                            value={operationalTarget || ""}
-                            onChange={(e) =>
-                              setOperationalTarget(
-                                parseFloat(e.target.value) || 0
-                              )
-                            }
-                            placeholder="0.00"
-                            className="w-32 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-right focus:border-rose-500 outline-none px-2 py-1 font-mono text-xs transition-colors no-print"
-                          />
-                          <span className="print-only hidden font-mono">
-                            {operationalTarget}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4 text-right font-medium text-slate-400">
-                          Target Line
-                        </td>
-                      </tr>
-                      <tr
-                        className={`font-black bg-slate-50/20 dark:bg-slate-900/50`}
-                      >
-                        <td className="px-4 py-4 uppercase tracking-widest text-[9px]">
-                          Target Variance
-                        </td>
-                        <td className="px-4 py-4 text-right text-slate-900 dark:text-white font-mono">
-                          {formatAED(variance)}
-                        </td>
-                        <td className="px-4 py-4 text-right text-slate-500">
-                          {variancePct.toFixed(1)}%
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden shadow-sm">
-                  <h4 className="text-[10px] font-black uppercase text-white bg-[#001f3f] px-4 py-3">
-                    Revenue Mix by Category
-                  </h4>
-                  <table className="w-full text-[11px]">
-                    <thead className="bg-slate-50 dark:bg-slate-950 font-bold text-slate-500 border-b border-slate-100 dark:border-slate-800 uppercase text-[9px]">
-                      <tr>
-                        <th className="px-4 py-3 text-left">Category</th>
-                        <th className="text-right px-4">% Contribution</th>
-                        <th className="text-right px-4">Net Value</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {[
-                        { label: "Food", val: dsrStats.categories.Food },
-                        {
-                          label: "Non-Alcoholic Bev",
-                          val: dsrStats.categories.NonAlc,
-                        },
-                        {
-                          label: "Alcoholic Bev",
-                          val: dsrStats.categories.Alc,
-                        },
-                        {
-                          label: "Retail / Other",
-                          val: dsrStats.categories.Retail,
-                        },
-                      ].map((cat, i) => (
-                        <tr
-                          key={i}
-                          className="hover:bg-slate-50 dark:hover:bg-slate-800/50"
-                        >
-                          <td className="px-4 py-3 font-bold">{cat.label}</td>
-                          <td className="px-4 py-3 text-right font-bold text-slate-400">
-                            {dsrStats.net > 0
-                              ? ((cat.val / dsrStats.net) * 100).toFixed(1)
-                              : 0}
-                            %
-                          </td>
-                          <td className="px-4 py-3 text-right font-black font-mono">
-                            {formatAED(cat.val)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden shadow-sm">
-                  <h4 className="text-[10px] font-black uppercase text-white bg-[#001f3f] px-4 py-3">
-                    Settlement Summary
-                  </h4>
-                  <table className="w-full text-[11px]">
-                    <thead className="bg-slate-50 dark:bg-slate-950 font-bold text-slate-500 border-b border-slate-100 dark:border-slate-800 uppercase text-[9px]">
-                      <tr>
-                        <th className="px-4 py-3 text-left">Tender Type</th>
-                        <th className="px-4 py-3 text-right">Count</th>
-                        <th className="px-4 py-3 text-right">
-                          Amount (Incl Tip)
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {(data.paymentSummary || []).length > 0 ? (
-                        data.paymentSummary!.map((p, i) => (
-                          <tr
-                            key={i}
-                            className="hover:bg-slate-50 dark:hover:bg-slate-800/50"
-                          >
-                            <td className="px-4 py-3 font-bold">{p.name}</td>
-                            <td className="px-4 py-3 text-right text-slate-400 font-bold">
-                              {p.count}
-                            </td>
-                            <td className="px-4 py-3 text-right font-black font-mono">
-                              {formatAED(p.amount + p.tips)}
-                            </td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr className="bg-slate-50/50">
-                          <td
-                            colSpan={3}
-                            className="px-4 py-12 text-center text-slate-400 italic"
-                          >
-                            No Payments Synced
-                          </td>
-                        </tr>
-                      )}
-                      {totalTips > 0 && (
-                        <tr className="bg-emerald-50/20 dark:bg-emerald-950/20">
-                          <td className="px-4 py-3 font-bold text-emerald-600">
-                            Total Tips Included
-                          </td>
-                          <td className="px-4 py-3"></td>
-                          <td className="px-4 py-3 text-right font-black font-mono text-emerald-600">
-                            {formatAED(totalTips)}
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                    <tfoot className="bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 font-black">
-                      <tr>
-                        <td className="px-4 py-4 text-[10px] uppercase tracking-wider">
-                          Total Settlements
-                        </td>
-                        <td className="px-4 py-4"></td>
-                        <td className="px-4 py-4 text-right text-base text-slate-900 dark:text-white">
-                          {formatAED(totalSettledWithTips)}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-
-                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden shadow-sm">
-                  <h4 className="text-[10px] font-black uppercase text-white bg-[#001f3f] px-4 py-3">
-                    Discount Analysis
-                  </h4>
-                  <table className="w-full text-[11px]">
-                    <thead className="bg-slate-50 dark:bg-slate-950 font-bold text-slate-500 border-b border-slate-100 dark:border-slate-800 uppercase text-[9px]">
-                      <tr>
-                        <th className="px-4 py-3 text-left">Campaign</th>
-                        <th className="px-4 py-3 text-right">Qty</th>
-                        <th className="px-4 py-3 text-right">
-                          Reduction (AED)
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {discountLedger.length > 0 ? (
-                        Array.from(
-                          discountLedger
-                            .reduce((acc, curr) => {
-                              const existing = acc.get(curr.discountName) || {
-                                count: 0,
-                                amount: 0,
-                              };
-                              existing.count += curr.quantity || 1;
-                              existing.amount += parseCurrency(
-                                curr.discountAmtStr
-                              );
-                              acc.set(curr.discountName, existing);
-                              return acc;
-                            }, new Map<string, { count: number; amount: number }>())
-                            .entries()
-                        ).map(([name, val], i) => (
-                          <tr
-                            key={i}
-                            className="hover:bg-slate-50 dark:hover:bg-slate-800/50"
-                          >
-                            <td className="px-4 py-3 font-bold">{name}</td>
-                            <td className="px-4 py-3 text-right text-slate-400 font-bold">
-                              {val.count}
-                            </td>
-                            <td className="px-4 py-3 text-right font-black font-mono">
-                              {formatAED(val.amount)}
-                            </td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td
-                            colSpan={3}
-                            className="px-4 py-8 text-center text-slate-400"
-                          >
-                            No discounts applied
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                    <tfoot className="bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 font-black">
-                      <tr>
-                        <td className="px-4 py-4 text-[10px] uppercase tracking-wider">
-                          Total Reductions
-                        </td>
-                        <td className="px-4 py-4"></td>
-                        <td className="px-4 py-4 text-right text-base text-slate-800 dark:text-slate-100">
-                          {formatAED(dsrStats.discTotal)}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              </div>
-
-              <div className="flex justify-center pt-8 no-print">
-                <button
-                  onClick={handleExportPDF}
-                  disabled={exporting}
-                  className="flex items-center px-12 py-5 bg-slate-900 text-white text-xs font-black rounded-full shadow-2xl hover:bg-slate-800 hover:scale-[1.02] transition-all uppercase tracking-[0.2em] active:scale-95 disabled:opacity-50"
-                >
-                  {exporting
-                    ? "Generating Document..."
-                    : "Export Executive PDF Report"}
-                </button>
-              </div>
-            </div>
+              data={data}
+              dsrStats={dsrStats}
+              fromDate={fromDate}
+              selectedStoreName={selectedStoreName}
+              modName={modName}
+              setModName={setModName}
+              bohName={bohName}
+              setBohName={setBohName}
+              operationalTarget={operationalTarget}
+              setOperationalTarget={setOperationalTarget}
+              exporting={exporting}
+              onExportPDF={handleExportPDF}
+            />
           )}
 
-          {tab === "STAFF" && (
-            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm animate-fadeIn">
-              <div className="px-6 py-4 bg-slate-50 dark:bg-slate-950 font-black text-[10px] uppercase text-slate-400 border-b border-slate-100 dark:border-slate-800 tracking-widest">
-                Employee Performance Consolidated
-              </div>
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-950 font-black uppercase text-slate-500 border-b border-slate-100 dark:border-slate-800">
-                  <tr>
-                    <th className="px-6 py-5">Employee Name</th>
-                    <th className="text-right px-6 py-5">Checks</th>
-                    <th className="text-right px-6 py-5">Covers</th>
-                    <th className="text-right px-6 py-5">Net Sales (AED)</th>
-                    <th className="text-right px-6 py-5">Avg Spend/Cover</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {staffMetrics.map((s, i) => (
-                    <tr
-                      key={i}
-                      className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
-                    >
-                      <td className="px-6 py-4 font-bold text-slate-700 dark:text-slate-300">
-                        {s.name}
-                      </td>
-                      <td className="px-6 py-4 text-right font-bold text-slate-400">
-                        {s.checks}
-                      </td>
-                      <td className="px-6 py-4 text-right font-bold text-slate-400">
-                        {s.covers}
-                      </td>
-                      <td className="px-6 py-4 text-right font-black font-mono text-slate-900 dark:text-white">
-                        {formatAED(s.netSales)}
-                      </td>
-                      <td className="px-6 py-4 text-right font-bold text-rose-600">
-                        {s.covers > 0
-                          ? formatAED(s.netSales / s.covers)
-                          : "0 AED"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          {tab === 'STAFF' && <StaffMetrics metrics={staffMetrics} />}
+
+          {tab === 'VOIDS' && <VoidLog voids={voidsData} data={data} />}
+
+          {tab === 'DISCOUNTS' && <DiscountLedger discounts={discountLedger} />}
+
+          {tab === 'ANALYSIS' && (
+            <PivotAnalysis 
+              flexibleData={flexibleData}
+              analysisDim={analysisDim}
+              setAnalysisDim={setAnalysisDim}
+              onExportExcel={handlePivotExport}
+            />
           )}
 
-          {tab === "VOIDS" && (
-            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm animate-fadeIn">
-              <div className="px-6 py-4 bg-slate-50 dark:bg-slate-950 font-black text-[10px] uppercase text-slate-400 border-b border-slate-100 dark:border-slate-800 tracking-widest">
-                System Void Log
-              </div>
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-950 font-black uppercase text-slate-500 border-b border-slate-100 dark:border-slate-800">
-                  <tr>
-                    <th className="px-6 py-5">Ticket #</th>
-                    <th className="px-6 py-5">Item Name</th>
-                    <th className="text-right px-6 py-5">Qty</th>
-                    <th className="px-6 py-5">Reason</th>
-                    <th className="px-6 py-5">Voided By</th>
-                    <th className="text-right px-6 py-5">Value</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {voidsData.length > 0 ? (
-                    voidsData.map((v, i) => (
-                      <tr
-                        key={i}
-                        className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
-                      >
-                        <td className="px-6 py-4 font-mono font-bold text-slate-500">
-                          {v.saleId}
-                        </td>
-                        <td className="px-6 py-4 font-bold dark:text-white">
-                          {v.menuName}
-                        </td>
-                        <td className="px-6 py-4 text-right font-bold">
-                          {v.quantity}
-                        </td>
-                        <td className="px-6 py-4 text-slate-500 italic font-medium">
-                          {v.voidError || "No reason provided"}
-                        </td>
-                        <td className="px-6 py-4 font-bold">
-                          {data.users.find((u) => u.id === v.voidByEmployee)
-                            ?.name || "Manager"}
-                        </td>
-                        <td className="px-6 py-4 text-right font-black text-rose-600">
-                          {formatAED(parseCurrency(v.totalGrossAmountStr))}
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td
-                        colSpan={6}
-                        className="px-6 py-10 text-center text-slate-400 italic font-medium"
-                      >
-                        No void records found for this period.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {tab === "DISCOUNTS" && (
-            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm animate-fadeIn">
-              <div className="px-6 py-4 bg-slate-50 dark:bg-slate-950 font-black text-[10px] uppercase text-slate-400 border-b border-slate-100 dark:border-slate-800 tracking-widest">
-                Discount Activity Ledger
-              </div>
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-950 font-black uppercase text-slate-500 border-b border-slate-100 dark:border-slate-800">
-                  <tr>
-                    <th className="px-6 py-5">Campaign</th>
-                    <th className="px-6 py-5 text-right">Qty</th>
-                    <th className="px-6 py-5 text-right">Reduction</th>
-                    <th className="px-6 py-5">Reason</th>
-                    <th className="px-6 py-5">Applied By</th>
-                    <th className="px-6 py-5">Approved By</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {discountLedger.length > 0 ? (
-                    discountLedger.map((d, i) => (
-                      <tr
-                        key={i}
-                        className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
-                      >
-                        <td className="px-6 py-4 font-bold dark:text-white">
-                          {d.discountName}
-                        </td>
-                        <td className="px-6 py-4 text-right font-bold text-slate-400">
-                          {d.quantity}
-                        </td>
-                        <td className="px-6 py-4 text-right font-black font-mono text-slate-900 dark:text-white">
-                          {formatAED(parseCurrency(d.discountAmtStr))}
-                        </td>
-                        <td className="px-6 py-4 text-slate-500 italic font-medium">
-                          {d.reason || "-"}
-                        </td>
-                        <td className="px-6 py-4 font-bold text-slate-600 dark:text-slate-400">
-                          {d.discountAppliedBy}
-                        </td>
-                        <td className="px-6 py-4 font-bold text-slate-600 dark:text-slate-400">
-                          {d.approvedBy}
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td
-                        colSpan={6}
-                        className="px-6 py-10 text-center text-slate-400 italic font-medium"
-                      >
-                        No discounts recorded in this range.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {tab === "ANALYSIS" && (
-            <div className="flex flex-col flex-1 gap-6 animate-fadeIn">
-              <div className="flex justify-between items-center bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-                <div className="flex bg-slate-50 dark:bg-slate-950 rounded-xl p-1 border border-slate-200 dark:border-slate-800">
-                  {["CATEGORY", "DEPARTMENT", "HOUR", "FLOOR"].map((d: any) => (
-                    <button
-                      key={d}
-                      onClick={() => setAnalysisDim(d)}
-                      className={`px-5 py-2 text-[10px] font-black rounded-lg transition-all ${
-                        analysisDim === d
-                          ? "bg-slate-900 text-white shadow-lg"
-                          : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
-                      }`}
-                    >
-                      {d}
-                    </button>
-                  ))}
-                </div>
-                <button
-                  onClick={handleExportTab}
-                  className="bg-slate-900 hover:bg-black text-white px-5 py-2 rounded-xl text-xs font-bold transition-all shadow-xl"
-                >
-                  Pivot Export (Excel)
-                </button>
-              </div>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 min-h-0">
-                <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 shadow-sm">
-                  <ResponsiveContainer width="100%" height={320}>
-                    {["HOUR", "FLOOR"].includes(analysisDim) ? (
-                      <BarChart data={flexibleData}>
-                        <XAxis
-                          dataKey="name"
-                          tick={{ fontSize: 9, fill: "#64748b" }}
-                          axisLine={false}
-                          tickLine={false}
-                        />
-                        <YAxis
-                          tick={{ fontSize: 9, fill: "#64748b" }}
-                          axisLine={false}
-                          tickLine={false}
-                        />
-                        <Tooltip
-                          cursor={{ fill: "transparent" }}
-                          contentStyle={{
-                            borderRadius: "12px",
-                            border: "none",
-                            boxShadow: "0 20px 25px -5px rgb(0 0 0 / 0.1)",
-                          }}
-                          formatter={(v: any) => formatAED(Number(v))}
-                        />
-                        <Bar
-                          dataKey="value"
-                          fill="#0f172a"
-                          radius={[6, 6, 0, 0]}
-                        />
-                      </BarChart>
-                    ) : (
-                      <PieChart>
-                        <Pie
-                          data={flexibleData}
-                          dataKey="value"
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={60}
-                          outerRadius={100}
-                          paddingAngle={4}
-                        >
-                          {flexibleData.map((_, i: number) => (
-                            <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          contentStyle={{
-                            borderRadius: "12px",
-                            border: "none",
-                          }}
-                          formatter={(v: any) => formatAED(Number(v))}
-                        />
-                        <Legend
-                          iconType="circle"
-                          wrapperStyle={{
-                            fontSize: "10px",
-                            paddingTop: "20px",
-                          }}
-                        />
-                      </PieChart>
-                    )}
-                  </ResponsiveContainer>
-                </div>
-                <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm flex flex-col">
-                  <div className="px-6 py-4 bg-slate-50 dark:bg-slate-950 font-black text-[10px] uppercase text-slate-400 border-b border-slate-100 dark:border-slate-800">
-                    Pivot Distribution
-                  </div>
-                  <div className="overflow-auto flex-1">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-50 dark:bg-slate-950 text-slate-500 font-black uppercase sticky top-0">
-                        <tr>
-                          <th className="px-6 py-4">Dimension</th>
-                          <th className="px-6 py-4 text-right">Qty</th>
-                          <th className="px-6 py-4 text-right">
-                            Revenue (AED)
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {flexibleData.map((row, i) => (
-                          <tr
-                            key={i}
-                            className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
-                          >
-                            <td className="px-6 py-4 font-bold text-slate-700 dark:text-slate-300">
-                              {row.name}
-                            </td>
-                            <td className="px-6 py-4 text-right text-slate-500 font-bold">
-                              {row.count}
-                            </td>
-                            <td className="px-6 py-4 text-right font-black font-mono text-slate-900 dark:text-white">
-                              {formatAED(row.value)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {tab === "MENU" && (
-            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm animate-fadeIn">
-              <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-950/40">
-                <h3 className="text-xs font-black uppercase text-slate-400 tracking-wider">
-                  Product Velocity Metrics
-                </h3>
-                <button
-                  onClick={handleExportTab}
-                  className="bg-slate-900 hover:bg-black text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-lg"
-                >
-                  Export Sheet (Excel)
-                </button>
-              </div>
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-950 font-black uppercase text-slate-500 border-b border-slate-100 dark:border-slate-800">
-                  <tr>
-                    <th className="px-6 py-5">Product Name</th>
-                    <th className="text-right px-6 py-5">Units Sold</th>
-                    <th className="text-right px-6 py-5">Net Sales (AED)</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {menuPerformance.map((item, i) => (
-                    <tr
-                      key={i}
-                      className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
-                    >
-                      <td className="px-6 py-4 font-bold text-slate-700 dark:text-slate-300">
-                        {item.name}
-                      </td>
-                      <td className="px-6 py-4 text-right font-bold text-slate-400">
-                        {item.count}
-                      </td>
-                      <td className="px-6 py-4 text-right font-black font-mono text-slate-900 dark:text-white">
-                        {formatAED(item.value)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          {tab === 'MENU' && (
+            <ItemPerformance 
+              menuPerformance={menuPerformance}
+              onExportExcel={handleMenuExport}
+            />
           )}
         </div>
       )}
