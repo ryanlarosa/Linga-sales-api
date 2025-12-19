@@ -43,6 +43,7 @@ export const exportRecapToExcel = (summary: any, storeName: string) => {
     const data = [{
         Store: storeName,
         'Report Period': summary.period,
+        'Gross Sales': parseNum(summary.grossSales),
         'Total Net Sales': parseNum(summary.netSales),
         'Total Tax': parseNum(summary.tax),
         'Total Discounts': parseNum(summary.discounts),

@@ -5,10 +5,9 @@ import axios from 'axios';
 const app = express();
 
 // --- Configuration ---
-// FIXED: Using 'lingaros.com' as per your working prototype reference
 const LINGA_API_KEY = process.env.LINGA_API_KEY || "UiSg7JagVOd42IEwAnctfWS6qSTaKxxr";
 const LINGAPOS_BASE_URL = "https://api.lingaros.com"; 
-const AXIOS_TIMEOUT = 120000; // 120 seconds
+const AXIOS_TIMEOUT = 240000; // Increase to 4 minutes for large ranges
 
 // --- Middleware ---
 app.use(cors({
@@ -19,25 +18,28 @@ app.use(express.json());
 
 // --- Helper Function ---
 async function callExternalApi(url, params = {}) {
-    console.log(`[Backend] Requesting: ${url}`);
+    const start = Date.now();
+    console.log(`[Backend] Requesting: ${url} with params: ${JSON.stringify(params)}`);
     try {
         const response = await axios.get(url, {
             headers: { 
                 'apikey': LINGA_API_KEY,
                 'Content-Type': 'application/json',
-                'User-Agent': 'LingaPOS-Analytics/2.0'
+                'User-Agent': 'LingaPOS-Analytics/2.5'
             },
             params: params,
             timeout: AXIOS_TIMEOUT
         });
+        const duration = Date.now() - start;
+        console.log(`[Backend] Success (${duration}ms): ${url}`);
         return response;
     } catch (error) {
+        const duration = Date.now() - start;
         if (axios.isAxiosError(error)) {
             const status = error.response?.status || 500;
             const msg = error.response?.data?.message || error.message;
-            console.error(`[Backend Error ${status}] ${url}: ${msg}`);
+            console.error(`[Backend Error ${status}] after ${duration}ms for ${url}: ${msg}`);
             
-            // Re-throw with status attached for the route handler
             const err = new Error(msg);
             // @ts-ignore
             err.status = status;
@@ -45,19 +47,18 @@ async function callExternalApi(url, params = {}) {
             err.data = error.response?.data;
             throw err;
         }
+        console.error(`[Unexpected Error] after ${duration}ms for ${url}: ${error.message}`);
         throw error;
     }
 }
 
-// --- API Routes (Prefix with /api to match Vercel routing) ---
+// --- API Routes ---
 
-// 1. Get Sale
 app.get('/api/v1/lingapos/store/:storeId/getsale', async (req, res) => {
     try {
         const { storeId } = req.params;
         const { fromDate, toDate } = req.query;
         const url = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/getsale`;
-        
         const response = await callExternalApi(url, { fromDate, toDate });
         res.json(response.data);
     } catch (error) {
@@ -65,13 +66,11 @@ app.get('/api/v1/lingapos/store/:storeId/getsale', async (req, res) => {
     }
 });
 
-// 2. Discount Report
 app.get('/api/v1/lingapos/store/:storeId/discountReport', async (req, res) => {
     try {
         const { storeId } = req.params;
         const { dateOption, fromDate, toDate, selectedReportType } = req.query;
         const url = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/discountReport`;
-        
         const response = await callExternalApi(url, { dateOption, fromDate, toDate, selectedReportType });
         res.json(response.data);
     } catch (error) {
@@ -79,12 +78,10 @@ app.get('/api/v1/lingapos/store/:storeId/discountReport', async (req, res) => {
     }
 });
 
-// 3. Layout (Floors)
 app.get('/api/v1/lingapos/store/:storeId/layout', async (req, res) => {
     try {
         const { storeId } = req.params;
         const url = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/layout`;
-        
         const response = await callExternalApi(url);
         res.json(response.data);
     } catch (error) {
@@ -92,12 +89,10 @@ app.get('/api/v1/lingapos/store/:storeId/layout', async (req, res) => {
     }
 });
 
-// 4. Users
 app.get('/api/v1/lingapos/store/:storeId/users', async (req, res) => {
     try {
         const { storeId } = req.params;
         const url = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/users`;
-        
         const response = await callExternalApi(url);
         res.json(response.data);
     } catch (error) {
@@ -105,11 +100,9 @@ app.get('/api/v1/lingapos/store/:storeId/users', async (req, res) => {
     }
 });
 
-// 5. Sale Report (Menu Items)
 app.get('/api/v1/lingapos/store/:storeId/saleReport', async (req, res) => {
     try {
         const { storeId } = req.params;
-        // Pass all query params through
         const url = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/saleReport`;
         const response = await callExternalApi(url, req.query);
         res.json(response.data);
@@ -118,7 +111,6 @@ app.get('/api/v1/lingapos/store/:storeId/saleReport', async (req, res) => {
     }
 });
 
-// 6. Sale Summary Report
 app.get('/api/v1/lingapos/store/:storeId/saleSummaryReport', async (req, res) => {
     try {
         const { storeId } = req.params;
@@ -130,7 +122,6 @@ app.get('/api/v1/lingapos/store/:storeId/saleSummaryReport', async (req, res) =>
     }
 });
 
-// --- Local Dev Server ---
 const PORT = process.env.PORT || 3000;
 if (process.env.NODE_ENV !== 'production') {
     app.listen(PORT, () => {
