@@ -1,7 +1,22 @@
-import React, { useState, useMemo } from 'react';
-import { FetchedData } from '../../types';
-import { exportRecapToExcel, exportAnalysisToExcel } from '../../services/excelService';
-import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import React, { useState, useMemo } from "react";
+import { FetchedData } from "../../types";
+import {
+  exportRecapToExcel,
+  exportAnalysisToExcel,
+} from "../../services/excelService";
+import {
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
 
 interface ReportsProps {
   data: FetchedData | null;
@@ -10,35 +25,70 @@ interface ReportsProps {
   selectedStoreName: string;
 }
 
-type AnalysisDimension = 'CATEGORY' | 'DEPARTMENT' | 'HOUR' | 'FLOOR';
-const COLORS = ['#e11d48', '#be123c', '#9f1239', '#fb7185', '#fda4af', '#f43f5e', '#ec4899', '#db2777'];
+type AnalysisDimension = "CATEGORY" | "DEPARTMENT" | "HOUR" | "FLOOR";
+const COLORS = [
+  "#e11d48",
+  "#be123c",
+  "#9f1239",
+  "#fb7185",
+  "#fda4af",
+  "#f43f5e",
+  "#ec4899",
+  "#db2777",
+];
 
 const parseCurrency = (val: string | undefined): number => {
-    if (!val) return 0;
-    return parseFloat(val.replace(/,/g, '').replace('$', '')) || 0;
+  if (!val) return 0;
+  return parseFloat(val.replace(/,/g, "").replace("$", "")) || 0;
 };
 
 const formatAED = (num: number) => {
-  return num.toLocaleString('en-AE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' AED';
+  return (
+    num.toLocaleString("en-AE", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }) + " AED"
+  );
 };
 
 const IconExcel = () => (
-  <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+  <svg
+    className="w-4 h-4 mr-2"
+    fill="none"
+    viewBox="0 0 24 24"
+    stroke="currentColor"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+    />
   </svg>
 );
 
-const ReportsModule: React.FC<ReportsProps> = ({ data, fromDate, toDate, selectedStoreName }) => {
-  const [tab, setTab] = useState<'RECAP' | 'ANALYSIS' | 'MENU' | 'STAFF' | 'VOIDS' | 'DISCOUNTS'>('RECAP');
-  const [analysisDim, setAnalysisDim] = useState<AnalysisDimension>('CATEGORY');
+const ReportsModule: React.FC<ReportsProps> = ({
+  data,
+  fromDate,
+  toDate,
+  selectedStoreName,
+}) => {
+  const [tab, setTab] = useState<
+    "RECAP" | "ANALYSIS" | "MENU" | "STAFF" | "VOIDS" | "DISCOUNTS"
+  >("RECAP");
+  const [analysisDim, setAnalysisDim] = useState<AnalysisDimension>("CATEGORY");
 
   // --- DERIVED DATA ---
   const dsrStats = useMemo(() => {
     if (!data || !data.sales) return null;
-    let gross = 0; let net = 0; let tax = 0; let disc = 0; let guestCount = 0;
+    let gross = 0;
+    let net = 0;
+    let tax = 0;
+    let disc = 0;
+    let guestCount = 0;
     let covers = 0;
 
-    data.sales.forEach(s => {
+    data.sales.forEach((s) => {
       net += parseCurrency(s.netSalesStr);
       gross += parseCurrency(s.grossAmountStr);
       tax += parseCurrency(s.totalTaxAmountStr);
@@ -46,66 +96,108 @@ const ReportsModule: React.FC<ReportsProps> = ({ data, fromDate, toDate, selecte
       covers += s.guestCount;
     });
 
-    data.saleDetails.forEach(d => {
-      if (d.check !== 'Total') disc += parseCurrency(d.discountAmtStr);
+    data.saleDetails.forEach((d) => {
+      if (d.check !== "Total") disc += parseCurrency(d.discountAmtStr);
     });
 
     // Time of day segments
     const segments = { Breakfast: 0, Lunch: 0, Dinner: 0, Late: 0 };
     const coverSegments = { Breakfast: 0, Lunch: 0, Dinner: 0, Late: 0 };
-    
-    data.detailedMenu.forEach(m => {
+
+    data.detailedMenu.forEach((m) => {
       const h = parseInt(m.orderHour);
       const val = parseCurrency(m.totalGrossAmountStr);
-      if (h >= 6 && h < 11) { segments.Breakfast += val; coverSegments.Breakfast += m.quantity; }
-      else if (h >= 11 && h < 16) { segments.Lunch += val; coverSegments.Lunch += m.quantity; }
-      else if (h >= 16 && h < 24) { segments.Dinner += val; coverSegments.Dinner += m.quantity; }
-      else { segments.Late += val; coverSegments.Late += m.quantity; }
+      if (h >= 6 && h < 11) {
+        segments.Breakfast += val;
+        coverSegments.Breakfast += m.quantity;
+      } else if (h >= 11 && h < 16) {
+        segments.Lunch += val;
+        coverSegments.Lunch += m.quantity;
+      } else if (h >= 16 && h < 24) {
+        segments.Dinner += val;
+        coverSegments.Dinner += m.quantity;
+      } else {
+        segments.Late += val;
+        coverSegments.Late += m.quantity;
+      }
     });
 
-    const avgTicket = data.sales.length > 0 ? (net / data.sales.length) : 0;
-    const avgGuest = guestCount > 0 ? (net / guestCount) : 0;
+    const avgTicket = data.sales.length > 0 ? net / data.sales.length : 0;
+    const avgGuest = guestCount > 0 ? net / guestCount : 0;
 
-    return { 
-      gross, net, tax, disc, guestCount, covers, avgTicket, avgGuest,
-      segments, coverSegments,
-      checks: data.sales.length
+    return {
+      gross,
+      net,
+      tax,
+      disc,
+      guestCount,
+      covers,
+      avgTicket,
+      avgGuest,
+      segments,
+      coverSegments,
+      checks: data.sales.length,
     };
   }, [data]);
 
   const flexibleData = useMemo(() => {
     if (!data) return [];
-    const map = new Map<string, { name: string, value: number, count: number }>();
-    if (analysisDim === 'FLOOR') {
-      data.sales.forEach(sale => {
-        const floor = data.floors.find(f => f.id === sale.floorId)?.floorName || "Other";
+    const map = new Map<
+      string,
+      { name: string; value: number; count: number }
+    >();
+    if (analysisDim === "FLOOR") {
+      data.sales.forEach((sale) => {
+        const floor =
+          data.floors.find((f) => f.id === sale.floorId)?.floorName || "Other";
         const curr = map.get(floor) || { name: floor, value: 0, count: 0 };
-        curr.value += parseCurrency(sale.netSalesStr); curr.count += 1;
+        curr.value += parseCurrency(sale.netSalesStr);
+        curr.count += 1;
         map.set(floor, curr);
       });
     } else {
-      data.detailedMenu.forEach(item => {
+      data.detailedMenu.forEach((item) => {
         let key = item.categoryName || "Uncategorized";
-        if (analysisDim === 'DEPARTMENT') key = item.departmentName || "No Dept";
-        if (analysisDim === 'HOUR') key = `${parseInt(item.orderHour)}:00`;
+        if (analysisDim === "DEPARTMENT")
+          key = item.departmentName || "No Dept";
+        if (analysisDim === "HOUR") key = `${parseInt(item.orderHour)}:00`;
         const curr = map.get(key) || { name: key, value: 0, count: 0 };
-        curr.value += parseCurrency(item.grossAmountStr); curr.count += (item.quantity || 0);
+        curr.value += parseCurrency(item.grossAmountStr);
+        curr.count += item.quantity || 0;
         map.set(key, curr);
       });
     }
     const res = Array.from(map.values());
-    return analysisDim === 'HOUR' ? res.sort((a,b) => parseInt(a.name) - parseInt(b.name)) : res.sort((a,b) => b.value - a.value);
+    return analysisDim === "HOUR"
+      ? res.sort((a, b) => parseInt(a.name) - parseInt(b.name))
+      : res.sort((a, b) => b.value - a.value);
   }, [data, analysisDim]);
 
   const staffPerformance = useMemo(() => {
     if (!data || !data.sales) return [];
-    const map = new Map<string, { id: string, name: string, sales: number, tickets: number, guests: number }>();
-    
-    data.sales.forEach(sale => {
+    const map = new Map<
+      string,
+      {
+        id: string;
+        name: string;
+        sales: number;
+        tickets: number;
+        guests: number;
+      }
+    >();
+
+    data.sales.forEach((sale) => {
       const empId = sale.employee;
-      const empName = data.users.find(u => u.id === empId)?.name || "Unknown Staff";
-      const curr = map.get(empId) || { id: empId, name: empName, sales: 0, tickets: 0, guests: 0 };
-      
+      const empName =
+        data.users.find((u) => u.id === empId)?.name || "Unknown Staff";
+      const curr = map.get(empId) || {
+        id: empId,
+        name: empName,
+        sales: 0,
+        tickets: 0,
+        guests: 0,
+      };
+
       curr.sales += parseCurrency(sale.netSalesStr);
       curr.tickets += 1;
       curr.guests += sale.guestCount;
@@ -116,183 +208,346 @@ const ReportsModule: React.FC<ReportsProps> = ({ data, fromDate, toDate, selecte
   }, [data]);
 
   const menuPerformance = useMemo(() => {
-    if(!data?.menus) return [];
-    return data.menus.map((m: any) => ({ name: m.menuName, value: parseCurrency(m.totalGrossAmountStr), count: m.quantity })).sort((a,b) => b.value - a.value);
+    if (!data?.menus) return [];
+    return data.menus
+      .map((m: any) => ({
+        name: m.menuName,
+        value: parseCurrency(m.totalGrossAmountStr),
+        count: m.quantity,
+      }))
+      .sort((a, b) => b.value - a.value);
   }, [data]);
 
   const handleExportRecap = () => {
-    if(!dsrStats) return;
-    exportRecapToExcel({ 
-      period: `${fromDate} to ${toDate}`, 
-      netSales: dsrStats.net.toFixed(2), 
-      tax: dsrStats.tax.toFixed(2), 
-      discounts: dsrStats.disc.toFixed(2), 
-      guests: dsrStats.guestCount, 
-      avgTicket: dsrStats.avgTicket.toFixed(2), 
-      tickets: dsrStats.checks 
-    }, selectedStoreName);
+    if (!dsrStats) return;
+    exportRecapToExcel(
+      {
+        period: `${fromDate} to ${toDate}`,
+        netSales: dsrStats.net.toFixed(2),
+        tax: dsrStats.tax.toFixed(2),
+        discounts: dsrStats.disc.toFixed(2),
+        guests: dsrStats.guestCount,
+        avgTicket: dsrStats.avgTicket.toFixed(2),
+        tickets: dsrStats.checks,
+      },
+      selectedStoreName
+    );
   };
 
   const handleExportTab = () => {
-    if(!data) return;
-    if (tab === 'ANALYSIS') exportAnalysisToExcel(flexibleData, analysisDim, selectedStoreName);
-    if (tab === 'STAFF') exportAnalysisToExcel(staffPerformance.map(s => ({ name: s.name, count: s.tickets, value: s.sales })), "Staff", selectedStoreName);
+    if (!data) return;
+    if (tab === "ANALYSIS")
+      exportAnalysisToExcel(flexibleData, analysisDim, selectedStoreName);
+    if (tab === "STAFF")
+      exportAnalysisToExcel(
+        staffPerformance.map((s) => ({
+          name: s.name,
+          count: s.tickets,
+          value: s.sales,
+        })),
+        "Staff",
+        selectedStoreName
+      );
+    if (tab === "MENU")
+      exportAnalysisToExcel(menuPerformance, "MenuItem", selectedStoreName);
   };
 
   return (
     <div className="px-8 space-y-6 max-w-[1600px] mx-auto animate-fadeIn flex flex-col h-[calc(100vh-140px)] transition-colors duration-300">
       <div className="flex gap-4 border-b border-slate-200 dark:border-slate-800 pb-1 overflow-x-auto custom-scrollbar transition-colors">
         {[
-          { id: 'RECAP', label: 'DSR Recap' },
-          { id: 'ANALYSIS', label: 'Advanced' },
-          { id: 'MENU', label: 'Item Sales' },
-          { id: 'STAFF', label: 'Staff Report' },
-          { id: 'VOIDS', label: 'Voids' },
-          { id: 'DISCOUNTS', label: 'Discounts' }
-        ].map(t => (
-          <button 
-            key={t.id} 
-            onClick={() => setTab(t.id as any)} 
-            className={`px-4 py-2 text-sm font-bold border-b-2 transition-all whitespace-nowrap ${tab === t.id ? 'border-rose-600 text-rose-600 dark:text-rose-400' : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
+          { id: "RECAP", label: "DSR Recap" },
+          { id: "ANALYSIS", label: "Advanced" },
+          { id: "MENU", label: "Item Sales" },
+          { id: "STAFF", label: "Staff Report" },
+          { id: "VOIDS", label: "Voids" },
+          { id: "DISCOUNTS", label: "Discounts" },
+        ].map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id as any)}
+            className={`px-4 py-2 text-sm font-bold border-b-2 transition-all whitespace-nowrap ${
+              tab === t.id
+                ? "border-rose-600 text-rose-600 dark:text-rose-400"
+                : "border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+            }`}
           >
             {t.label}
           </button>
         ))}
       </div>
 
-      {tab === 'RECAP' && dsrStats && (
+      {tab === "RECAP" && dsrStats && data && (
         <div className="flex flex-col gap-6 animate-fadeIn pb-12">
           {/* Header Row */}
           <div className="flex justify-between items-center bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
             <h2 className="text-lg font-black text-slate-800 dark:text-white uppercase tracking-tighter">
-              {selectedStoreName} - Daily Sales Report <span className="text-slate-400 font-medium normal-case text-sm ml-2">({fromDate})</span>
+              {selectedStoreName} - Daily Sales Report{" "}
+              <span className="text-slate-400 font-medium normal-case text-sm ml-2">
+                ({fromDate})
+              </span>
             </h2>
-            <button onClick={handleExportRecap} className="flex items-center px-4 py-2 bg-rose-600 text-white text-xs font-bold rounded-lg shadow active:scale-95 transition-all">
+            <button
+              onClick={handleExportRecap}
+              className="flex items-center px-4 py-2 bg-rose-600 text-white text-xs font-bold rounded-lg shadow active:scale-95 transition-all"
+            >
               <IconExcel /> Download DSR Excel
             </button>
           </div>
 
-          {/* DSR Grid Layout - Replicating the provided layout style */}
+          {/* DSR Grid Layout */}
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
             {/* Column 1: Report Meta */}
             <div className="space-y-4">
-                <div className="bg-slate-800 text-white p-4 rounded-lg flex flex-col gap-2">
-                    <h5 className="text-[10px] font-bold text-slate-400 border-b border-slate-700 pb-1 uppercase">Report Info</h5>
-                    <div className="flex justify-between text-xs py-1"><span>Report Date</span><span className="font-mono">{fromDate}</span></div>
-                    <div className="flex justify-between text-xs py-1"><span>Day</span><span className="font-bold">{new Date(fromDate).toLocaleDateString('en-AE', { weekday: 'long' })}</span></div>
-                    <div className="flex justify-between text-xs py-1"><span>Store</span><span className="font-bold">{selectedStoreName}</span></div>
+              <div className="bg-slate-800 text-white p-4 rounded-lg flex flex-col gap-2">
+                <h5 className="text-[10px] font-bold text-slate-400 border-b border-slate-700 pb-1 uppercase">
+                  Report Info
+                </h5>
+                <div className="flex justify-between text-xs py-1">
+                  <span>Report Date</span>
+                  <span className="font-mono">{fromDate}</span>
                 </div>
+                <div className="flex justify-between text-xs py-1">
+                  <span>Day</span>
+                  <span className="font-bold">
+                    {new Date(fromDate).toLocaleDateString("en-AE", {
+                      weekday: "long",
+                    })}
+                  </span>
+                </div>
+                <div className="flex justify-between text-xs py-1">
+                  <span>Store</span>
+                  <span className="font-bold">{selectedStoreName}</span>
+                </div>
+              </div>
             </div>
 
             {/* Column 2: Revenue & Spend */}
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 rounded-lg flex flex-col gap-2">
-                <h4 className="text-[10px] font-black uppercase text-white bg-slate-800 px-3 py-1.5 -mx-4 -mt-4 mb-2">Revenue & Spend Overview</h4>
-                <div className="flex justify-between text-xs py-1 border-b border-slate-50 dark:border-slate-800"><span>Gross - Day</span><span className="font-bold">{formatAED(dsrStats.gross)}</span></div>
-                <div className="flex justify-between text-xs py-1 bg-emerald-50 dark:bg-emerald-950/20 px-1 rounded font-bold"><span>Net - Day</span><span className="text-emerald-700 dark:text-emerald-400">{formatAED(dsrStats.net)}</span></div>
-                <div className="flex justify-between text-xs py-1 border-b border-slate-50 dark:border-slate-800"><span>Total Tax</span><span className="font-medium">{formatAED(dsrStats.tax)}</span></div>
-                <div className="flex justify-between text-xs py-1 mt-auto font-bold border-t border-slate-100 pt-2"><span>Avg. Spend/ Guest</span><span className="text-rose-600">{formatAED(dsrStats.avgGuest)}</span></div>
+              <h4 className="text-[10px] font-black uppercase text-white bg-slate-800 px-3 py-1.5 -mx-4 -mt-4 mb-2">
+                Revenue & Spend Overview
+              </h4>
+              <div className="flex justify-between text-xs py-1 border-b border-slate-50 dark:border-slate-800">
+                <span>Gross - Day</span>
+                <span className="font-bold">{formatAED(dsrStats.gross)}</span>
+              </div>
+              <div className="flex justify-between text-xs py-1 bg-emerald-50 dark:bg-emerald-950/20 px-1 rounded font-bold">
+                <span>Net - Day</span>
+                <span className="text-emerald-700 dark:text-emerald-400">
+                  {formatAED(dsrStats.net)}
+                </span>
+              </div>
+              <div className="flex justify-between text-xs py-1 border-b border-slate-50 dark:border-slate-800">
+                <span>Total Tax</span>
+                <span className="font-medium">{formatAED(dsrStats.tax)}</span>
+              </div>
+              <div className="flex justify-between text-xs py-1 mt-auto font-bold border-t border-slate-100 pt-2">
+                <span>Avg. Spend/ Guest</span>
+                <span className="text-rose-600">
+                  {formatAED(dsrStats.avgGuest)}
+                </span>
+              </div>
             </div>
 
             {/* Column 3: Covers */}
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 rounded-lg flex flex-col gap-2">
-                <h4 className="text-[10px] font-black uppercase text-white bg-slate-800 px-3 py-1.5 -mx-4 -mt-4 mb-2">Covers Overview</h4>
-                <div className="flex justify-between text-xs py-1 border-b border-slate-50 dark:border-slate-800"><span>Check Count</span><span className="font-black">{dsrStats.checks}</span></div>
-                <div className="flex justify-between text-xs py-1 font-bold"><span>Total Covers</span><span className="">{dsrStats.covers}</span></div>
-                <div className="flex justify-between text-xs py-1 border-b border-slate-50 dark:border-slate-800"><span>Avg. Spend/ Check</span><span className="font-medium">{formatAED(dsrStats.avgTicket)}</span></div>
+              <h4 className="text-[10px] font-black uppercase text-white bg-slate-800 px-3 py-1.5 -mx-4 -mt-4 mb-2">
+                Covers Overview
+              </h4>
+              <div className="flex justify-between text-xs py-1 border-b border-slate-50 dark:border-slate-800">
+                <span>Check Count</span>
+                <span className="font-black">{dsrStats.checks}</span>
+              </div>
+              <div className="flex justify-between text-xs py-1 font-bold">
+                <span>Total Covers</span>
+                <span className="">{dsrStats.covers}</span>
+              </div>
+              <div className="flex justify-between text-xs py-1 border-b border-slate-50 dark:border-slate-800">
+                <span>Avg. Spend/ Check</span>
+                <span className="font-medium">
+                  {formatAED(dsrStats.avgTicket)}
+                </span>
+              </div>
             </div>
 
             {/* Column 4: Discounts */}
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 rounded-lg flex flex-col gap-2 overflow-auto max-h-[180px]">
-                <h4 className="text-[10px] font-black uppercase text-white bg-slate-800 px-3 py-1.5 -mx-4 -mt-4 mb-2">Complimentary Discounts</h4>
-                <div className="flex justify-between text-[11px] font-bold py-1 mb-1 text-rose-600"><span>Subtotal Discounts</span><span>{formatAED(dsrStats.disc)}</span></div>
-                {data.saleDetails.filter(d => d.check !== 'Total' && parseCurrency(d.discountAmtStr) > 0).map((d, i) => (
-                    <div key={i} className="flex justify-between text-[10px] py-1 text-slate-500 border-t border-slate-100 dark:border-slate-800">
-                        <span className="truncate pr-2">{d.discountName}</span>
-                        <span className="whitespace-nowrap">{formatAED(parseCurrency(d.discountAmtStr))}</span>
-                    </div>
+              <h4 className="text-[10px] font-black uppercase text-white bg-slate-800 px-3 py-1.5 -mx-4 -mt-4 mb-2">
+                Complimentary Discounts
+              </h4>
+              <div className="flex justify-between text-[11px] font-bold py-1 mb-1 text-rose-600">
+                <span>Subtotal Discounts</span>
+                <span>{formatAED(dsrStats.disc)}</span>
+              </div>
+              {data.saleDetails
+                .filter(
+                  (d) =>
+                    d.check !== "Total" && parseCurrency(d.discountAmtStr) > 0
+                )
+                .map((d, i) => (
+                  <div
+                    key={i}
+                    className="flex justify-between text-[10px] py-1 text-slate-500 border-t border-slate-100 dark:border-slate-800"
+                  >
+                    <span className="truncate pr-2">{d.discountName}</span>
+                    <span className="whitespace-nowrap">
+                      {formatAED(parseCurrency(d.discountAmtStr))}
+                    </span>
+                  </div>
                 ))}
             </div>
           </div>
 
           {/* Revenue Contribution By Segment */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden shadow-sm">
-              <h4 className="text-[10px] font-black uppercase text-white bg-slate-800 px-4 py-2">Revenue Contribution by Time Period</h4>
-              <table className="w-full text-[11px]">
-                  <thead className="bg-slate-100 dark:bg-slate-800 uppercase font-bold text-slate-500">
-                      <tr>
-                          <th className="px-4 py-2.5 text-left">Segment</th>
-                          <th className="px-4 py-2.5 text-right">Revenue (AED)</th>
-                          <th className="px-4 py-2.5 text-right">Covers</th>
-                          <th className="px-4 py-2.5 text-right">Avg / Guest</th>
-                      </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {[
-                          { label: 'Breakfast', rev: dsrStats.segments.Breakfast, cov: dsrStats.coverSegments.Breakfast },
-                          { label: 'Lunch', rev: dsrStats.segments.Lunch, cov: dsrStats.coverSegments.Lunch },
-                          { label: 'Dinner', rev: dsrStats.segments.Dinner, cov: dsrStats.coverSegments.Dinner },
-                          { label: 'Other', rev: dsrStats.segments.Late, cov: dsrStats.coverSegments.Late }
-                      ].map((seg, idx) => (
-                          <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                              <td className="px-4 py-3 font-bold">{seg.label}</td>
-                              <td className="px-4 py-3 text-right font-mono">{formatAED(seg.rev)}</td>
-                              <td className="px-4 py-3 text-right">{seg.cov}</td>
-                              <td className="px-4 py-3 text-right font-medium text-rose-600">
-                                  {seg.cov > 0 ? formatAED(seg.rev / seg.cov) : '0.00 AED'}
-                              </td>
-                          </tr>
-                      ))}
-                  </tbody>
-              </table>
+            <h4 className="text-[10px] font-black uppercase text-white bg-slate-800 px-4 py-2">
+              Revenue Contribution by Time Period
+            </h4>
+            <table className="w-full text-[11px]">
+              <thead className="bg-slate-100 dark:bg-slate-800 uppercase font-bold text-slate-500">
+                <tr>
+                  <th className="px-4 py-2.5 text-left">Segment</th>
+                  <th className="px-4 py-2.5 text-right">Revenue (AED)</th>
+                  <th className="px-4 py-2.5 text-right">Covers</th>
+                  <th className="px-4 py-2.5 text-right">Avg / Guest</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {[
+                  {
+                    label: "Breakfast",
+                    rev: dsrStats.segments.Breakfast,
+                    cov: dsrStats.coverSegments.Breakfast,
+                  },
+                  {
+                    label: "Lunch",
+                    rev: dsrStats.segments.Lunch,
+                    cov: dsrStats.coverSegments.Lunch,
+                  },
+                  {
+                    label: "Dinner",
+                    rev: dsrStats.segments.Dinner,
+                    cov: dsrStats.coverSegments.Dinner,
+                  },
+                  {
+                    label: "Other",
+                    rev: dsrStats.segments.Late,
+                    cov: dsrStats.coverSegments.Late,
+                  },
+                ].map((seg, idx) => (
+                  <tr
+                    key={idx}
+                    className="hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                  >
+                    <td className="px-4 py-3 font-bold">{seg.label}</td>
+                    <td className="px-4 py-3 text-right font-mono">
+                      {formatAED(seg.rev)}
+                    </td>
+                    <td className="px-4 py-3 text-right">{seg.cov}</td>
+                    <td className="px-4 py-3 text-right font-medium text-rose-600">
+                      {seg.cov > 0 ? formatAED(seg.rev / seg.cov) : "0.00 AED"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
 
           {/* Top Sellers Analysis */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden shadow-sm">
-                  <h4 className="text-[10px] font-black uppercase text-white bg-rose-600 px-4 py-2">Top Sellers By Net Sales</h4>
-                  <table className="w-full text-[11px]">
-                      <thead className="bg-slate-100 dark:bg-slate-800 font-bold text-slate-500 uppercase">
-                          <tr><th className="px-4 py-2">Item / Qty</th><th className="px-4 py-2 text-right">Value (AED)</th><th className="px-4 py-2 text-right">% Net</th></tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                          {data.detailedMenu.sort((a,b) => parseCurrency(b.totalGrossAmountStr) - parseCurrency(a.totalGrossAmountStr)).slice(0, 8).map((item, i) => {
-                              const val = parseCurrency(item.totalGrossAmountStr);
-                              const pct = dsrStats.gross > 0 ? ((val / dsrStats.gross) * 100).toFixed(1) : '0.0';
-                              return (
-                                  <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                                      <td className="px-4 py-2.5"><span className="font-bold text-slate-800 dark:text-slate-200">{item.menuName}</span> <span className="text-slate-400">({item.quantity})</span></td>
-                                      <td className="px-4 py-2.5 text-right font-mono font-bold">{formatAED(val)}</td>
-                                      <td className="px-4 py-2.5 text-right font-medium text-slate-400">{pct}%</td>
-                                  </tr>
-                              );
-                          })}
-                      </tbody>
-                  </table>
-              </div>
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden shadow-sm">
+              <h4 className="text-[10px] font-black uppercase text-white bg-rose-600 px-4 py-2">
+                Top Sellers By Net Sales
+              </h4>
+              <table className="w-full text-[11px]">
+                <thead className="bg-slate-100 dark:bg-slate-800 font-bold text-slate-500 uppercase">
+                  <tr>
+                    <th className="px-4 py-2">Item / Qty</th>
+                    <th className="px-4 py-2 text-right">Value (AED)</th>
+                    <th className="px-4 py-2 text-right">% Net</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {data.detailedMenu
+                    .sort(
+                      (a, b) =>
+                        parseCurrency(b.totalGrossAmountStr) -
+                        parseCurrency(a.totalGrossAmountStr)
+                    )
+                    .slice(0, 8)
+                    .map((item, i) => {
+                      const val = parseCurrency(item.totalGrossAmountStr);
+                      const pct =
+                        dsrStats.gross > 0
+                          ? ((val / dsrStats.gross) * 100).toFixed(1)
+                          : "0.0";
+                      return (
+                        <tr
+                          key={i}
+                          className="hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                        >
+                          <td className="px-4 py-2.5">
+                            <span className="font-bold text-slate-800 dark:text-slate-200">
+                              {item.menuName}
+                            </span>{" "}
+                            <span className="text-slate-400">
+                              ({item.quantity})
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5 text-right font-mono font-bold">
+                            {formatAED(val)}
+                          </td>
+                          <td className="px-4 py-2.5 text-right font-medium text-slate-400">
+                            {pct}%
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
 
-              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden shadow-sm p-4">
-                  <h4 className="text-[10px] font-black uppercase text-slate-400 mb-4 border-b pb-2">Category Revenue Mix</h4>
-                  <div className="h-[240px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
-                              <Pie data={flexibleData.slice(0, 8)} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2}>
-                                  {flexibleData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                              </Pie>
-                              <Tooltip formatter={(v: number) => formatAED(v)} />
-                              <Legend iconSize={8} wrapperStyle={{ fontSize: '10px' }} />
-                          </PieChart>
-                      </ResponsiveContainer>
-                  </div>
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden shadow-sm p-4">
+              <h4 className="text-[10px] font-black uppercase text-slate-400 mb-4 border-b pb-2">
+                Category Revenue Mix
+              </h4>
+              <div className="h-[240px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={flexibleData.slice(0, 8)}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={50}
+                      outerRadius={80}
+                      paddingAngle={2}
+                    >
+                      {flexibleData.map((_, i) => (
+                        <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(v: number) => formatAED(v)} />
+                    <Legend iconSize={8} wrapperStyle={{ fontSize: "10px" }} />
+                  </PieChart>
+                </ResponsiveContainer>
               </div>
+            </div>
           </div>
         </div>
       )}
 
-      {tab === 'STAFF' && (
+      {tab === "STAFF" && (
         <div className="flex flex-col flex-1 animate-fadeIn gap-6">
           <div className="flex justify-between items-center bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-            <h3 className="text-sm font-bold uppercase text-slate-400">Staff Sales Performance</h3>
-            <button onClick={handleExportTab} className="flex items-center px-4 py-2 bg-rose-600 text-white text-xs font-bold rounded-lg shadow">
+            <h3 className="text-sm font-bold uppercase text-slate-400">
+              Staff Sales Performance
+            </h3>
+            <button
+              onClick={handleExportTab}
+              className="flex items-center px-4 py-2 bg-rose-600 text-white text-xs font-bold rounded-lg shadow"
+            >
               <IconExcel /> Export Staff Report
             </button>
           </div>
@@ -304,25 +559,38 @@ const ReportsModule: React.FC<ReportsProps> = ({ data, fromDate, toDate, selecte
                   <th className="px-6 py-4 text-right">Tickets</th>
                   <th className="px-6 py-4 text-right">Total Net Sales</th>
                   <th className="px-6 py-4 text-right">Total Covers</th>
-                  <th className="px-6 py-4 text-right font-bold text-rose-600">Avg / Ticket</th>
+                  <th className="px-6 py-4 text-right font-bold text-rose-600">
+                    Avg / Ticket
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {staffPerformance.map((row, i) => (
-                  <tr key={row.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                {staffPerformance.map((row) => (
+                  <tr
+                    key={row.id}
+                    className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                  >
                     <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center font-bold text-rose-600 text-[10px]">
-                                {row.name.charAt(0)}
-                            </div>
-                            <span className="font-semibold dark:text-slate-200">{row.name}</span>
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center font-bold text-rose-600 text-[10px]">
+                          {row.name.charAt(0)}
                         </div>
+                        <span className="font-semibold dark:text-slate-200">
+                          {row.name}
+                        </span>
+                      </div>
                     </td>
-                    <td className="px-6 py-4 text-right dark:text-slate-400">{row.tickets}</td>
-                    <td className="px-6 py-4 text-right font-bold">{formatAED(row.sales)}</td>
+                    <td className="px-6 py-4 text-right dark:text-slate-400">
+                      {row.tickets}
+                    </td>
+                    <td className="px-6 py-4 text-right font-bold">
+                      {formatAED(row.sales)}
+                    </td>
                     <td className="px-6 py-4 text-right">{row.guests}</td>
                     <td className="px-6 py-4 text-right font-bold text-rose-600">
-                        {row.tickets > 0 ? formatAED(row.sales / row.tickets) : '0.00 AED'}
+                      {row.tickets > 0
+                        ? formatAED(row.sales / row.tickets)
+                        : "0.00 AED"}
                     </td>
                   </tr>
                 ))}
@@ -332,42 +600,134 @@ const ReportsModule: React.FC<ReportsProps> = ({ data, fromDate, toDate, selecte
         </div>
       )}
 
-      {tab === 'ANALYSIS' && (
+      {tab === "MENU" && data && (
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex-1 flex flex-col shadow-sm animate-fadeIn transition-colors">
+          <div className="p-4 bg-slate-50 dark:bg-slate-950/50 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center">
+            <h3 className="text-xs font-bold text-slate-400 uppercase">
+              Menu Breakdown
+            </h3>
+            <button
+              onClick={handleExportTab}
+              className="flex items-center px-3 py-1.5 bg-rose-600 text-white text-[10px] font-bold rounded-lg transition-all hover:bg-rose-700"
+            >
+              <IconExcel /> Export List
+            </button>
+          </div>
+          <div className="overflow-auto flex-1">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 dark:bg-slate-950 text-slate-400 font-bold uppercase sticky top-0 border-b border-slate-200 dark:border-slate-800">
+                <tr>
+                  <th className="px-6 py-4">Item</th>
+                  <th className="px-6 py-4 text-right">Sold</th>
+                  <th className="px-6 py-4 text-right">Total (AED)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {menuPerformance.map((item, i) => (
+                  <tr
+                    key={i}
+                    className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                  >
+                    <td className="px-6 py-4 font-medium dark:text-slate-200">
+                      {item.name}
+                    </td>
+                    <td className="px-6 py-4 text-right dark:text-slate-400">
+                      {item.count}
+                    </td>
+                    <td className="px-6 py-4 text-right font-bold text-rose-700 dark:text-rose-400">
+                      {formatAED(item.value)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {tab === "ANALYSIS" && data && (
         <div className="flex flex-col flex-1 gap-6 min-h-0 animate-fadeIn">
           <div className="flex justify-between items-center bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 transition-colors">
             <div className="flex items-center gap-4">
-              <span className="text-[10px] font-bold text-slate-400 uppercase">Pivot:</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase">
+                Pivot:
+              </span>
               <div className="flex bg-slate-50 dark:bg-slate-950 rounded-lg p-1 border border-slate-200 dark:border-slate-800">
-                {['CATEGORY', 'DEPARTMENT', 'HOUR', 'FLOOR'].map((d: any) => (
-                  <button key={d} onClick={() => setAnalysisDim(d)} className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${analysisDim === d ? 'bg-rose-600 text-white shadow' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}>{d}</button>
+                {["CATEGORY", "DEPARTMENT", "HOUR", "FLOOR"].map((d: any) => (
+                  <button
+                    key={d}
+                    onClick={() => setAnalysisDim(d)}
+                    className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${
+                      analysisDim === d
+                        ? "bg-rose-600 text-white shadow"
+                        : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                    }`}
+                  >
+                    {d}
+                  </button>
                 ))}
               </div>
             </div>
-            <button onClick={handleExportTab} className="flex items-center px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg shadow transition-all">
-              <IconExcel /> Export Data
+            <button
+              onClick={handleExportTab}
+              className="flex items-center px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg shadow transition-all"
+            >
+              <IconExcel /> Export Advanced
             </button>
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1 min-h-0">
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 flex flex-col min-h-[300px] shadow-sm transition-colors">
               <ResponsiveContainer width="100%" height="100%">
-                {['HOUR', 'FLOOR'].includes(analysisDim) ? (
-                  <BarChart data={flexibleData}><XAxis dataKey="name" tick={{fontSize: 9}}/><YAxis tick={{fontSize: 9}}/><Tooltip formatter={(v: number) => formatAED(v)} /><Bar dataKey="value" fill="#e11d48" radius={[4, 4, 0, 0]} /></BarChart>
+                {["HOUR", "FLOOR"].includes(analysisDim) ? (
+                  <BarChart data={flexibleData}>
+                    <XAxis dataKey="name" tick={{ fontSize: 9 }} />
+                    <YAxis tick={{ fontSize: 9 }} />
+                    <Tooltip formatter={(v: number) => formatAED(v)} />
+                    <Bar dataKey="value" fill="#e11d48" radius={[4, 4, 0, 0]} />
+                  </BarChart>
                 ) : (
-                  <PieChart><Pie data={flexibleData} dataKey="value" cx="50%" cy="50%" outerRadius={80}>{flexibleData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}</Pie><Tooltip formatter={(v: number) => formatAED(v)} /><Legend/></PieChart>
+                  <PieChart>
+                    <Pie
+                      data={flexibleData}
+                      dataKey="value"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={80}
+                    >
+                      {flexibleData.map((_, i) => (
+                        <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(v: number) => formatAED(v)} />
+                    <Legend />
+                  </PieChart>
                 )}
               </ResponsiveContainer>
             </div>
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-auto shadow-sm transition-colors">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-50 dark:bg-slate-950 text-slate-400 font-bold uppercase sticky top-0 border-b border-slate-200 dark:border-slate-800">
-                  <tr><th className="px-6 py-4">Label</th><th className="px-6 py-4 text-right">Qty</th><th className="px-6 py-4 text-right">Value (AED)</th></tr>
+                  <tr>
+                    <th className="px-6 py-4">Label</th>
+                    <th className="px-6 py-4 text-right">Qty</th>
+                    <th className="px-6 py-4 text-right">Value (AED)</th>
+                  </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {flexibleData.map((row, i) => (
-                    <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                      <td className="px-6 py-4 font-semibold dark:text-slate-200">{row.name}</td>
-                      <td className="px-6 py-4 text-right dark:text-slate-400">{row.count}</td>
-                      <td className="px-6 py-4 text-right font-bold text-rose-700 dark:text-rose-400">{formatAED(row.value)}</td>
+                    <tr
+                      key={i}
+                      className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                    >
+                      <td className="px-6 py-4 font-semibold dark:text-slate-200">
+                        {row.name}
+                      </td>
+                      <td className="px-6 py-4 text-right dark:text-slate-400">
+                        {row.count}
+                      </td>
+                      <td className="px-6 py-4 text-right font-bold text-rose-700 dark:text-rose-400">
+                        {formatAED(row.value)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
