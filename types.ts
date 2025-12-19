@@ -57,6 +57,12 @@ export interface DiscountDetail {
   totalDiscounts: string;
 }
 
+export interface PaymentSummaryItem {
+  name: string;
+  amount: number;
+  count: number;
+}
+
 export interface Floor {
   id: string;
   floorName: string;
@@ -94,5 +100,6 @@ export interface FetchedData {
   detailedMenu: MenuItemDetail[];
   totalGrossAmount: string;
   saleSummary: SaleSummary[];
+  paymentSummary?: PaymentSummaryItem[]; // Added for payment breakdown
   isSimulated?: boolean; // New flag to indicate data source
 }

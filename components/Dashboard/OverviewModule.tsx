@@ -1,3 +1,4 @@
+
 import React, { useMemo } from 'react';
 import { FetchedData } from '../../types';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -10,29 +11,51 @@ interface OverviewProps {
 
 const parseCurrency = (val: string | undefined): number => {
     if (!val) return 0;
-    return parseFloat(val.replace(/,/g, '').replace('$', '')) || 0;
+    const clean = String(val).replace(/[$,\s]/g, '');
+    return parseFloat(clean) || 0;
 };
 
 const formatAED = (num: number) => {
-  return num.toLocaleString('en-AE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' AED';
+  return num.toLocaleString('en-AE', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + ' AED';
 };
 
 const OverviewModule: React.FC<OverviewProps> = ({ data, theme, loading }) => {
   const { totalSales, totalGuests, avgTicket, chartData } = useMemo(() => {
     if (!data || !data.sales) return { totalSales: 0, totalGuests: 0, avgTicket: 0, chartData: [] };
     let netSum = 0; let guestSum = 0;
-    const hourMap = new Map<string, number>();
+    const hourMap = new Map<number, number>();
+    
     data.sales.forEach(sale => {
       const amt = parseCurrency(sale.netSalesStr);
       netSum += amt;
       guestSum += sale.guestCount || 0;
+      
       if (sale.saleOpenTime) {
-        const hour = new Date(sale.saleOpenTime).getHours();
-        hourMap.set(String(hour), (hourMap.get(String(hour)) || 0) + amt);
+        // LingaPOS can return full ISO strings or just time strings. 
+        // We handle ISO properly by creating a Date object.
+        const dateObj = new Date(sale.saleOpenTime);
+        if (!isNaN(dateObj.getTime())) {
+            const hour = dateObj.getHours();
+            hourMap.set(hour, (hourMap.get(hour) || 0) + amt);
+        } else {
+            // Fallback for HH:mm:ss strings
+            const hourPart = parseInt(sale.saleOpenTime.split(':')[0]);
+            if (!isNaN(hourPart)) {
+                hourMap.set(hourPart, (hourMap.get(hourPart) || 0) + amt);
+            }
+        }
       }
     });
+
+    // Average per ticket
     const avg = data.sales.length > 0 ? (netSum / data.sales.length) : 0;
-    const cData = Array.from({length: 24}, (_, i) => ({ time: `${i}:00`, netSales: hourMap.get(String(i)) || 0 }));
+    
+    // Ensure all 24 hours are represented for the trajectory
+    const cData = Array.from({length: 24}, (_, i) => ({ 
+      time: `${i}:00`, 
+      netSales: hourMap.get(i) || 0 
+    }));
+
     return { totalSales: netSum, totalGuests: guestSum, avgTicket: avg, chartData: cData };
   }, [data]);
 
@@ -68,7 +91,7 @@ const OverviewModule: React.FC<OverviewProps> = ({ data, theme, loading }) => {
               </defs>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#1e293b' : '#f1f5f9'} />
               <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 11}} />
-              <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 11}} tickFormatter={(v) => `${v}`} />
+              <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 11}} />
               <Tooltip 
                 contentStyle={{backgroundColor: theme==='dark'?'#0f172a':'#fff', borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', color: theme==='dark'?'#fff':'#000'}} 
                 formatter={(val: number) => formatAED(val)}

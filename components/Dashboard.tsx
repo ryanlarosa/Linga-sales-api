@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+
+import React, { useState, useEffect, useRef } from 'react';
 import { User, FetchedData, Store } from '../types';
 import { fetchDashboardData } from '../services/api';
 import { getStores } from '../services/firestoreService';
@@ -20,7 +21,6 @@ type ViewMode = 'OVERVIEW' | 'REPORTS' | 'SETTINGS';
 
 const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [view, setView] = useState<ViewMode>('OVERVIEW');
-  // Default to Light Mode as per user request
   const [theme, setTheme] = useState<'light'|'dark'>('light');
   
   const [storeList, setStoreList] = useState<Store[]>([]);
@@ -33,17 +33,17 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Sync Theme with DOM
+  // Tracks the last parameters fetched to avoid redundant syncs
+  const lastSyncRef = useRef<{store: string, from: string, to: string, live: boolean} | null>(null);
+
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [theme]);
 
-  // Initial Store Loading
   useEffect(() => {
     const init = async () => {
       const stores = await getStores();
       let available = stores;
-      // Filter based on user permissions
       if (user.role === 'user' && user.allowedStores && user.allowedStores.length > 0) {
           available = stores.filter(s => user.allowedStores!.includes(s.id));
       }
@@ -53,13 +53,25 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     init();
   }, [user]);
 
-  const loadData = async () => {
+  const loadData = async (force: boolean = false) => {
     if (!selectedStore) return;
+    
+    // Check if we already have this data loaded to prevent redundant syncs on view change
+    if (!force && lastSyncRef.current && 
+        lastSyncRef.current.store === selectedStore && 
+        lastSyncRef.current.from === fromDate && 
+        lastSyncRef.current.to === toDate && 
+        lastSyncRef.current.live === desiredLiveMode && 
+        data !== null) {
+      return;
+    }
+
     setLoading(true);
     setErrorMsg(null);
     try {
       const result = await fetchDashboardData(selectedStore, new Date(fromDate), new Date(toDate), !desiredLiveMode);
       setData(result);
+      lastSyncRef.current = { store: selectedStore, from: fromDate, to: toDate, live: desiredLiveMode };
     } catch (err: any) {
       setErrorMsg(err.message || "Failed to load data");
       setData(null);
@@ -68,9 +80,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     }
   };
 
+  // Only sync when core filters change, not when 'view' changes
   useEffect(() => {
-    if (selectedStore && view !== 'SETTINGS') loadData();
-  }, [selectedStore, view]);
+    if (selectedStore && view !== 'SETTINGS') {
+      loadData();
+    }
+  }, [selectedStore, fromDate, toDate, desiredLiveMode]);
 
   const handleMainExport = () => {
     if (!data) return;
@@ -93,7 +108,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
           setTheme={setTheme} 
           desiredLiveMode={desiredLiveMode} 
           setDesiredLiveMode={setDesiredLiveMode} 
-          onRefresh={loadData} 
+          onRefresh={() => loadData(true)} 
         />
 
         {view !== 'SETTINGS' && (
@@ -106,7 +121,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
             toDate={toDate}
             setToDate={setToDate}
             loading={loading}
-            onRefresh={loadData}
+            onRefresh={() => loadData(true)}
             onMainExport={handleMainExport}
             dataAvailable={!!data}
           />
