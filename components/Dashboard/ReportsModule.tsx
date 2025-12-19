@@ -88,6 +88,7 @@ const ReportsModule: React.FC<ReportsProps> = ({
 
     data.sales.forEach((s) => {
       const netVal = parseCurrency(s.netSalesStr);
+      // As requested: Get Gross Revenue data from GrossReceipt total
       const grossReceipt = parseCurrency(s.grossReceiptStr);
       net += netVal;
       grossReceiptSum += grossReceipt;
@@ -268,6 +269,19 @@ const ReportsModule: React.FC<ReportsProps> = ({
     weekday: "long",
   });
 
+  const totalTips = useMemo(() => {
+    if (!data || !data.paymentSummary) return 0;
+    return data.paymentSummary.reduce((acc, p) => acc + (p.tips || 0), 0);
+  }, [data]);
+
+  const totalSettledWithTips = useMemo(() => {
+    if (!data || !data.paymentSummary) return dsrStats?.gross || 0;
+    return data.paymentSummary.reduce(
+      (acc, p) => acc + (p.amount || 0) + (p.tips || 0),
+      0
+    );
+  }, [data, dsrStats]);
+
   return (
     <div className="px-8 space-y-6 max-w-[1600px] mx-auto animate-fadeIn flex flex-col h-[calc(100vh-140px)] transition-colors duration-300">
       <div className="flex gap-4 border-b border-slate-200 dark:border-slate-800 pb-1 overflow-x-auto custom-scrollbar transition-colors">
@@ -403,7 +417,7 @@ const ReportsModule: React.FC<ReportsProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                 <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-all">
                   <p className="text-[9px] font-black uppercase text-slate-400 mb-1 tracking-widest">
-                    Gross Receipt
+                    Gross Revenue (Receipt)
                   </p>
                   <h3 className="text-xl font-black text-slate-900 dark:text-white">
                     {formatAED(dsrStats.gross)}
@@ -586,7 +600,7 @@ const ReportsModule: React.FC<ReportsProps> = ({
                               {p.count}
                             </td>
                             <td className="px-4 py-3 text-right font-black font-mono">
-                              {formatAED(p.amount)}
+                              {formatAED(p.amount + p.tips)}
                             </td>
                           </tr>
                         ))
@@ -600,6 +614,17 @@ const ReportsModule: React.FC<ReportsProps> = ({
                           </td>
                         </tr>
                       )}
+                      {totalTips > 0 && (
+                        <tr className="bg-emerald-50/20 dark:bg-emerald-950/20">
+                          <td className="px-4 py-3 font-bold text-emerald-600">
+                            Total Tips Included
+                          </td>
+                          <td className="px-4 py-3"></td>
+                          <td className="px-4 py-3 text-right font-black font-mono text-emerald-600">
+                            {formatAED(totalTips)}
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                     <tfoot className="bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 font-black">
                       <tr>
@@ -608,12 +633,7 @@ const ReportsModule: React.FC<ReportsProps> = ({
                         </td>
                         <td className="px-4 py-4"></td>
                         <td className="px-4 py-4 text-right text-base text-slate-900 dark:text-white">
-                          {formatAED(
-                            ((data.paymentSummary || []).reduce(
-                              (acc: number, p) => acc + (p.amount || 0),
-                              0
-                            ) || dsrStats.gross) as number
-                          )}
+                          {formatAED(totalSettledWithTips)}
                         </td>
                       </tr>
                     </tfoot>

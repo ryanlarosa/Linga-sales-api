@@ -55,9 +55,9 @@ const getMockData = (storeId: string): FetchedData => {
       grossReceiptStr: (Math.random() * 120 + 170).toFixed(2),
       payments: [
         {
-          paymentRoleName: i % 2 === 0 ? "Visa" : "Cash",
-          amount: 200,
-          tipAmount: 10,
+          paymentMethod: i % 2 === 0 ? "Visa Card" : "Cash",
+          authorizedAmountStr: "200.00",
+          paymentTipStr: "10.00",
         },
       ],
     };
@@ -156,12 +156,6 @@ const getMockData = (storeId: string): FetchedData => {
     },
   ];
 
-  const mockPayments: PaymentSummaryItem[] = [
-    { name: "Cash", amount: 15420.5, count: 12 },
-    { name: "Visa", amount: 48950.0, count: 25 },
-    { name: "Mastercard", amount: 32110.25, count: 18 },
-  ];
-
   return {
     sales: mockSales,
     saleDetails: mockDiscounts,
@@ -176,7 +170,10 @@ const getMockData = (storeId: string): FetchedData => {
       discounts: "0.00",
     })),
     totalGrossAmount: "63913.00",
-    paymentSummary: mockPayments,
+    paymentSummary: [
+      { name: "Cash", amount: 15420.5, tips: 0, count: 12 },
+      { name: "Visa Card", amount: 48950.0, tips: 500.0, count: 25 },
+    ],
     isSimulated: true,
   };
 };
@@ -236,16 +233,26 @@ export const fetchDashboardData = async (
 
     const allOrders: MenuItemDetail[] = [];
     let totalGross = 0;
-    const paymentMap = new Map<string, { amount: number; count: number }>();
+    const paymentMap = new Map<
+      string,
+      { amount: number; tips: number; count: number }
+    >();
 
     if (salesData && salesData.sales) {
-      salesData.sales.forEach((sale: any) => {
-        // Aggregate payments if available
+      salesData.sales.forEach((sale: SaleOrder) => {
+        // Aggregate payments if available (using the deep structure provided in prompt)
         if (sale.payments) {
           sale.payments.forEach((p: any) => {
-            const name = p.paymentRoleName || "Other";
-            const existing = paymentMap.get(name) || { amount: 0, count: 0 };
-            existing.amount += (p.amount || 0) + (p.tipAmount || 0);
+            const name = p.paymentMethod || "Other";
+            const existing = paymentMap.get(name) || {
+              amount: 0,
+              tips: 0,
+              count: 0,
+            };
+            const amt = parseFloat(p.authorizedAmountStr || "0");
+            const tip = parseFloat(p.paymentTipStr || "0");
+            existing.amount += amt;
+            existing.tips += tip;
             existing.count += 1;
             paymentMap.set(name, existing);
           });
@@ -266,10 +273,11 @@ export const fetchDashboardData = async (
 
     const paymentSummary: PaymentSummaryItem[] = Array.from(
       paymentMap.entries()
-    ).map(([name, data]) => ({
+    ).map(([name, stats]) => ({
       name,
-      amount: data.amount,
-      count: data.count,
+      amount: stats.amount,
+      tips: stats.tips,
+      count: stats.count,
     }));
 
     return {

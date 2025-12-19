@@ -26,7 +26,11 @@ export interface SaleOrder {
   grossAmountStr: string;
   totalTaxAmountStr: string;
   grossReceiptStr: string;
-  payments?: { paymentRoleName: string; amount: number; tipAmount?: number }[];
+  payments?: {
+    paymentMethod: string;
+    authorizedAmountStr: string;
+    paymentTipStr: string;
+  }[];
   orders?: MenuItemDetail[];
 }
 
@@ -60,6 +64,7 @@ export interface DiscountDetail {
 export interface PaymentSummaryItem {
   name: string;
   amount: number;
+  tips: number;
   count: number;
 }
 
