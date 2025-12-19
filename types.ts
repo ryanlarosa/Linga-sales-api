@@ -29,6 +29,7 @@ export interface SaleOrder {
   grossReceiptStr: string;
   payments?: { 
     paymentMethod: string, 
+    paymentType?: string,
     authorizedAmountStr: string, 
     paymentTipStr: string 
   }[];
@@ -64,6 +65,7 @@ export interface DiscountDetail {
 
 export interface PaymentSummaryItem {
   name: string;
+  type: string;
   amount: number;
   tips: number;
   count: number;

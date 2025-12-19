@@ -10,6 +10,13 @@ function formatDate(date: Date): string {
   return `${day}-${month}-${year}`;
 }
 
+const parseApiFloat = (val: string | null | undefined): number => {
+    if (!val) return 0;
+    // Remove commas before parsing to float
+    const clean = String(val).replace(/,/g, '');
+    return parseFloat(clean) || 0;
+};
+
 const getMockData = (storeId: string): FetchedData => {
     const mockSales: SaleOrder[] = Array.from({ length: 120 }, (_, i) => {
         const hour = Math.floor(Math.random() * 24);
@@ -32,19 +39,23 @@ const getMockData = (storeId: string): FetchedData => {
             grossAmountStr: (Math.random() * 120 + 170).toFixed(2),
             totalTaxAmountStr: "15.00",
             grossReceiptStr: (Math.random() * 120 + 170).toFixed(2),
-            payments: [{ paymentMethod: i % 2 === 0 ? 'Visa Card' : 'Cash', authorizedAmountStr: "200.00", paymentTipStr: "10.00" }]
+            payments: [{ 
+                paymentMethod: i % 2 === 0 ? 'Visa Card' : 'Cash', 
+                paymentType: i % 2 === 0 ? 'Side CC' : 'Cash',
+                authorizedAmountStr: "200.00", 
+                paymentTipStr: "10.00" 
+            }]
         };
     });
 
     const mockDiscounts: DiscountDetail[] = [
-        { id: "d1", check: "TKT-1001", approvedBy: "Manager", date: "2024-01-01", discountAmtStr: "250.00", discountAppliedBy: "Staff 1", discountCoupon: "STAFF50", discountName: "Staff Discount", discountType: "Percentage", grossSalesStr: "1000.00", isTotal: false, menuItems: "Burger", percent: "25", quantity: 10, reason: "Employee Meal", totalDiscounts: "250.00" },
-        { id: "d2", check: "TKT-1005", approvedBy: "Admin", date: "2024-01-01", discountAmtStr: "500.00", discountAppliedBy: "Staff 2", discountCoupon: "COMP", discountName: "Manager Comp", discountType: "Amount", grossSalesStr: "1500.00", isTotal: false, menuItems: "Steak", percent: "0", quantity: 5, reason: "Service Delay", totalDiscounts: "500.00" },
+        { id: "d1", check: "TKT-1001", approvedBy: "Manager", date: "2024-01-01", discountAmtStr: "250.00", discountAppliedBy: "Staff 1", discountCoupon: "STAFF50", discountName: "Staff Discount", discountType: "Percentage", grossSalesStr: "1,000.00", isTotal: false, menuItems: "Burger", percent: "25", quantity: 10, reason: "Employee Meal", totalDiscounts: "250.00" },
+        { id: "d2", check: "TKT-1005", approvedBy: "Admin", date: "2024-01-01", discountAmtStr: "500.00", discountAppliedBy: "Staff 2", discountCoupon: "COMP", discountName: "Manager Comp", discountType: "Amount", grossSalesStr: "1,500.00", isTotal: false, menuItems: "Steak", percent: "0", quantity: 5, reason: "Service Delay", totalDiscounts: "500.00" },
     ];
 
     const mockDetailedMenu: MenuItemDetail[] = [
         { saleId: "TKT-1001", saleDate: "2024-01-01", orderHour: "09", orderMin: "30", departmentName: "Food", categoryName: "Breakfast", subCategoryName: "Eggs", quantity: 5, menuName: "Eggs Benedict", grossAmountStr: "45.00", totalGrossAmountStr: "225.00", totalDiscountAmountStr: "0.00", isVoid: "N", voidError: "", voidByEmployee: "" },
-        { saleId: "TKT-1002", saleDate: "2024-01-01", orderHour: "13", orderMin: "15", departmentName: "Food", categoryName: "Main Course", subCategoryName: "Steak", quantity: 12, menuName: "Carrara T-bone", grossAmountStr: "1929.00", totalGrossAmountStr: "23148.00", totalDiscountAmountStr: "0.00", isVoid: "N", voidError: "", voidByEmployee: "" },
-        { saleId: "TKT-1004", saleDate: "2024-01-01", orderHour: "20", orderMin: "45", departmentName: "Food", categoryName: "Set Menu", subCategoryName: "BSL", quantity: 2, menuName: "BSL SET MENU", grossAmountStr: "19720.00", totalGrossAmountStr: "39440.00", totalDiscountAmountStr: "0.00", isVoid: "N", voidError: "", voidByEmployee: "" }
+        { saleId: "TKT-1002", saleDate: "2024-01-01", orderHour: "13", orderMin: "15", departmentName: "Food", categoryName: "Main Course", subCategoryName: "Steak", quantity: 12, menuName: "Carrara T-bone", grossAmountStr: "1,929.00", totalGrossAmountStr: "23,148.00", totalDiscountAmountStr: "0.00", isVoid: "N", voidError: "", voidByEmployee: "" },
     ];
 
     return {
@@ -55,10 +66,12 @@ const getMockData = (storeId: string): FetchedData => {
         menus: [],
         detailedMenu: mockDetailedMenu,
         saleSummary: mockSales.map(s => ({ id: s.id, netSales: s.netSalesStr, totalTaxAmount: s.totalTaxAmountStr, discounts: "0.00" })),
-        totalGrossAmount: "63913.00",
+        totalGrossAmount: "63,913.00",
         paymentSummary: [
-            { name: "Cash", amount: 15420.50, tips: 0, count: 12 },
-            { name: "Visa Card", amount: 48950.00, tips: 500.00, count: 25 }
+            { name: "Cash", type: "Cash", amount: 15420.50, tips: 0, count: 12 },
+            { name: "Visa Card", type: "Side CC", amount: 5961.05, tips: 425.33, count: 91 },
+            { name: "Master Card", type: "Side CC", amount: 3865.25, tips: 301.32, count: 44 },
+            { name: "Deliveroo Card", type: "Other", amount: 3181.00, tips: 0, count: 25 }
         ],
         isSimulated: true
     };
@@ -105,21 +118,25 @@ export const fetchDashboardData = async (storeId: string, from: Date, to: Date, 
 
     const allOrders: MenuItemDetail[] = [];
     let totalGross = 0;
-    const paymentMap = new Map<string, { amount: number, tips: number, count: number }>();
+    const paymentMap = new Map<string, { amount: number, tips: number, count: number, type: string }>();
 
     if (salesData && salesData.sales) {
         salesData.sales.forEach((sale: SaleOrder) => {
-            // Aggregate payments if available (using the deep structure provided in prompt)
             if (sale.payments) {
                 sale.payments.forEach((p: any) => {
                     const name = p.paymentMethod || 'Other';
-                    const existing = paymentMap.get(name) || { amount: 0, tips: 0, count: 0 };
-                    const amt = parseFloat(p.authorizedAmountStr || "0");
-                    const tip = parseFloat(p.paymentTipStr || "0");
+                    const type = p.paymentType || 'Other';
+                    const key = `${name}_${type}`;
+                    const existing = paymentMap.get(key) || { amount: 0, tips: 0, count: 0, type: type };
+                    
+                    // CRITICAL: Use robust parser to handle commas
+                    const amt = parseApiFloat(p.authorizedAmountStr);
+                    const tip = parseApiFloat(p.paymentTipStr);
+                    
                     existing.amount += amt;
                     existing.tips += tip;
                     existing.count += 1;
-                    paymentMap.set(name, existing);
+                    paymentMap.set(key, existing);
                 });
             }
 
@@ -130,14 +147,15 @@ export const fetchDashboardData = async (storeId: string, from: Date, to: Date, 
                       saleId: sale.ticketNo,
                       saleDate: sale.startDate,
                     });
-                    totalGross += parseFloat(order.grossAmountStr || "0");
+                    totalGross += parseApiFloat(order.grossAmountStr);
                 });
             }
         });
     }
 
-    const paymentSummary: PaymentSummaryItem[] = Array.from(paymentMap.entries()).map(([name, stats]) => ({
-        name,
+    const paymentSummary: PaymentSummaryItem[] = Array.from(paymentMap.entries()).map(([key, stats]) => ({
+        name: key.split('_')[0],
+        type: stats.type,
         amount: stats.amount,
         tips: stats.tips,
         count: stats.count

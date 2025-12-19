@@ -1,6 +1,6 @@
 
-import React, { forwardRef } from 'react';
-import { FetchedData } from '../../../types';
+import React, { forwardRef, useMemo } from 'react';
+import { FetchedData, PaymentSummaryItem } from '../../../types';
 import { formatAED, parseCurrency } from './ReportUtils';
 
 interface DSRRecapProps {
@@ -25,8 +25,53 @@ const DSRRecap = forwardRef<HTMLDivElement, DSRRecapProps>(({
 }, ref) => {
   const dayName = new Date(fromDate).toLocaleDateString('en-AE', { weekday: 'long' });
   
-  const totalTips = data.paymentSummary?.reduce((acc, p) => acc + (p.tips || 0), 0) || 0;
-  const totalSettledWithTips = data.paymentSummary?.reduce((acc, p) => acc + (p.amount || 0) + (p.tips || 0), 0) || dsrStats.gross;
+  // Categorization Logic for Settlement Summary Sections
+  const { creditCards, otherPayments } = useMemo(() => {
+    const ccKeywords = ['visa', 'master', 'amex', 'qlub', 'credit', 'cc'];
+    const ccs: PaymentSummaryItem[] = [];
+    const others: PaymentSummaryItem[] = [];
+
+    (data.paymentSummary || []).forEach(p => {
+      const nameLower = p.name.toLowerCase();
+      const typeLower = (p.type || '').toLowerCase();
+      if (ccKeywords.some(k => nameLower.includes(k) || typeLower.includes('cc'))) {
+        ccs.push(p);
+      } else {
+        others.push(p);
+      }
+    });
+
+    return { creditCards: ccs, otherPayments: others };
+  }, [data.paymentSummary]);
+
+  // Totals for Section Footers
+  const ccTotals = useMemo(() => ({
+    count: creditCards.reduce((acc, p) => acc + p.count, 0),
+    amount: creditCards.reduce((acc, p) => acc + p.amount, 0),
+    tips: creditCards.reduce((acc, p) => acc + p.tips, 0)
+  }), [creditCards]);
+
+  const otherTotals = useMemo(() => ({
+    count: otherPayments.reduce((acc, p) => acc + p.count, 0),
+    amount: otherPayments.reduce((acc, p) => acc + p.amount, 0),
+    tips: otherPayments.reduce((acc, p) => acc + p.tips, 0)
+  }), [otherPayments]);
+
+  // Grouping for the final "PAYMENT SUMMARY" block (By Type)
+  const footerSummary = useMemo(() => {
+    const summaryMap = new Map<string, number>();
+    (data.paymentSummary || []).forEach(p => {
+        const typeLabel = p.type || 'OTHER PAYMENT';
+        const current = summaryMap.get(typeLabel) || 0;
+        summaryMap.set(typeLabel, current + p.amount);
+    });
+    return Array.from(summaryMap.entries());
+  }, [data.paymentSummary]);
+
+  const grandTotalAmount = ccTotals.amount + otherTotals.amount;
+  const grandTotalTips = ccTotals.tips + otherTotals.tips;
+  const grandTotalSettled = grandTotalAmount + grandTotalTips;
+
   const variance = dsrStats.net - operationalTarget;
   const variancePct = operationalTarget > 0 ? (variance / operationalTarget) * 100 : 0;
 
@@ -175,7 +220,7 @@ const DSRRecap = forwardRef<HTMLDivElement, DSRRecapProps>(({
         </div>
       </div>
 
-      {/* TABLES ROW 2 */}
+      {/* TABLES ROW 2: CATEGORIZED SETTLEMENTS */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden shadow-sm">
           <h4 className="text-[10px] font-black uppercase text-white bg-[#001f3f] px-4 py-3">Settlement Summary</h4>
@@ -184,35 +229,51 @@ const DSRRecap = forwardRef<HTMLDivElement, DSRRecapProps>(({
               <tr>
                 <th className="px-4 py-3 text-left">Tender Type</th>
                 <th className="px-4 py-3 text-right">Count</th>
-                <th className="px-4 py-3 text-right">Settled Amount</th>
-                <th className="px-4 py-3 text-right">Tip (AED)</th>
+                <th className="px-4 py-3 text-right">Amt</th>
+                <th className="px-4 py-3 text-right">Tip</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {data.paymentSummary && data.paymentSummary.length > 0 ? (
-                data.paymentSummary.map((p, i) => (
-                  <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                    <td className="px-4 py-3 font-bold">{p.name}</td>
-                    <td className="px-4 py-3 text-right text-slate-400 font-bold">{p.count}</td>
-                    <td className="px-4 py-3 text-right font-black font-mono">{formatAED(p.amount)}</td>
-                    <td className="px-4 py-3 text-right font-black font-mono text-emerald-600">+{formatAED(p.tips)}</td>
-                  </tr>
-                ))
-              ) : (
-                <tr className="bg-slate-50/50"><td colSpan={4} className="px-4 py-12 text-center text-slate-400 italic">No Payments Synced</td></tr>
-              )}
+              {/* CREDIT CARD SECTION */}
+              <tr className="bg-slate-50 dark:bg-slate-950 font-black text-slate-400 text-[9px] uppercase tracking-widest"><td colSpan={4} className="px-4 py-2">Credit Card</td></tr>
+              {creditCards.map((p, i) => (
+                <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                  <td className="px-4 py-3 font-bold">{p.name}</td>
+                  <td className="px-4 py-3 text-right text-slate-400">{p.count}</td>
+                  <td className="px-4 py-3 text-right font-bold">{formatAED(p.amount)}</td>
+                  <td className="px-4 py-3 text-right font-bold text-emerald-600">{formatAED(p.tips)}</td>
+                </tr>
+              ))}
+              <tr className="bg-slate-50/50 font-black"><td className="px-4 py-2">Total Credit Card</td><td className="text-right px-4 py-2">{ccTotals.count}</td><td className="text-right px-4 py-2">{formatAED(ccTotals.amount)}</td><td className="text-right px-4 py-2 text-emerald-600">{formatAED(ccTotals.tips)}</td></tr>
+
+              {/* OTHER PAYMENT SECTION */}
+              <tr className="bg-slate-50 dark:bg-slate-950 font-black text-slate-400 text-[9px] uppercase tracking-widest pt-4"><td colSpan={4} className="px-4 py-2">Other Payment(s)</td></tr>
+              {otherPayments.map((p, i) => (
+                <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                  <td className="px-4 py-3 font-bold">{p.name}</td>
+                  <td className="px-4 py-3 text-right text-slate-400">{p.count}</td>
+                  <td className="px-4 py-3 text-right font-bold">{formatAED(p.amount)}</td>
+                  <td className="px-4 py-3 text-right font-bold text-emerald-600">{formatAED(p.tips)}</td>
+                </tr>
+              ))}
+              <tr className="bg-slate-50/50 font-black"><td className="px-4 py-2">Total Other</td><td className="text-right px-4 py-2">{otherTotals.count}</td><td className="text-right px-4 py-2">{formatAED(otherTotals.amount)}</td><td className="text-right px-4 py-2 text-emerald-600">{formatAED(otherTotals.tips)}</td></tr>
             </tbody>
-            <tfoot className="bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 font-black">
-              <tr>
-                <td className="px-4 py-4 text-[10px] uppercase tracking-wider">Total Settlements</td>
-                <td className="px-4 py-4"></td>
-                <td className="px-4 py-4 text-right text-base text-slate-900 dark:text-white">
-                  {formatAED(totalSettledWithTips - totalTips)}
-                </td>
-                <td className="px-4 py-4 text-right text-base text-emerald-600">
-                  {formatAED(totalTips)}
-                </td>
-              </tr>
+
+            {/* PAYMENT SUMMARY BLOCK (Matches Linga Report Footer) */}
+            <tfoot className="bg-[#001f3f] text-white border-t border-slate-200 dark:border-slate-800 font-black">
+                <tr className="text-[9px] font-black uppercase tracking-widest bg-slate-900/40"><td colSpan={4} className="px-4 py-2 text-slate-300 tracking-tighter">Payment Summary (Grouped by Type)</td></tr>
+                {footerSummary.map(([type, totalAmt], idx) => (
+                   <tr key={idx} className="border-t border-white/5">
+                        <td className="px-4 py-2 uppercase text-[10px]">{type}</td>
+                        <td colSpan={2}></td>
+                        <td className="text-right px-4 py-2">{formatAED(totalAmt)}</td>
+                   </tr>
+                ))}
+                <tr className="border-t border-rose-500 bg-rose-600">
+                    <td className="px-4 py-3 text-xs uppercase">Grand Total Settlement</td>
+                    <td colSpan={2}></td>
+                    <td className="text-right px-4 py-3 text-xs">{formatAED(grandTotalSettled)}</td>
+                </tr>
             </tfoot>
           </table>
         </div>
