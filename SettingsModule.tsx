@@ -85,6 +85,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
       {msg && <div className="bg-emerald-50 text-emerald-600 border border-emerald-100 p-3 rounded-lg text-sm font-medium transition-all">{msg}</div>}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Creation Form */}
         <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm h-fit transition-colors">
           <h3 className="text-xs font-bold uppercase text-slate-400 mb-4 tracking-wider">
             {tab === 'STORES' ? 'New Store Location' : 'New User Account'}
@@ -108,6 +109,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
           </form>
         </div>
 
+        {/* List View */}
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm transition-colors">
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 dark:bg-slate-950 text-slate-400 uppercase text-[10px] font-bold">

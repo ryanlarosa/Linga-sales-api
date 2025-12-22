@@ -31,15 +31,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   
   const [data, setData] = useState<FetchedData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<string>("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  // Tracks the last parameters fetched to avoid redundant syncs
-  const lastSyncRef = useRef<{store: string, from: string, to: string, live: boolean} | null>(null);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [theme]);
 
+  // Initial Load: Store List only
   useEffect(() => {
     const init = async () => {
       const stores = await getStores();
@@ -53,39 +52,29 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     init();
   }, [user]);
 
-  const loadData = async (force: boolean = false) => {
+  const loadData = async () => {
     if (!selectedStore) return;
     
-    // Check if we already have this data loaded to prevent redundant syncs on view change
-    if (!force && lastSyncRef.current && 
-        lastSyncRef.current.store === selectedStore && 
-        lastSyncRef.current.from === fromDate && 
-        lastSyncRef.current.to === toDate && 
-        lastSyncRef.current.live === desiredLiveMode && 
-        data !== null) {
-      return;
-    }
-
     setLoading(true);
     setErrorMsg(null);
+    setSyncProgress("Initializing...");
     try {
-      const result = await fetchDashboardData(selectedStore, new Date(fromDate), new Date(toDate), !desiredLiveMode);
+      const result = await fetchDashboardData(
+        selectedStore, 
+        new Date(fromDate), 
+        new Date(toDate), 
+        !desiredLiveMode,
+        (msg) => setSyncProgress(msg)
+      );
       setData(result);
-      lastSyncRef.current = { store: selectedStore, from: fromDate, to: toDate, live: desiredLiveMode };
     } catch (err: any) {
       setErrorMsg(err.message || "Failed to load data");
       setData(null);
     } finally {
       setLoading(false);
+      setSyncProgress("");
     }
   };
-
-  // Only sync when core filters change, not when 'view' changes
-  useEffect(() => {
-    if (selectedStore && view !== 'SETTINGS') {
-      loadData();
-    }
-  }, [selectedStore, fromDate, toDate, desiredLiveMode]);
 
   const handleMainExport = () => {
     if (!data) return;
@@ -108,7 +97,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
           setTheme={setTheme} 
           desiredLiveMode={desiredLiveMode} 
           setDesiredLiveMode={setDesiredLiveMode} 
-          onRefresh={() => loadData(true)} 
+          onRefresh={loadData} 
         />
 
         {view !== 'SETTINGS' && (
@@ -121,15 +110,20 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
             toDate={toDate}
             setToDate={setToDate}
             loading={loading}
-            onRefresh={() => loadData(true)}
+            syncProgress={syncProgress}
+            onRefresh={loadData}
             onMainExport={handleMainExport}
             dataAvailable={!!data}
           />
         )}
 
         {errorMsg && (
-          <div className="mx-8 mt-4 bg-red-500/10 border border-red-500/20 text-red-500 px-4 py-2 rounded-xl text-xs font-medium">
-            {errorMsg}
+          <div className="mx-8 mt-4 bg-rose-500/10 border border-rose-500/20 text-rose-600 px-6 py-4 rounded-2xl text-xs font-bold flex items-center gap-3 animate-fadeIn">
+            <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+            <div>
+              <p className="uppercase tracking-widest text-[10px] opacity-70 mb-1">Synchronization Halted</p>
+              {errorMsg}
+            </div>
           </div>
         )}
 

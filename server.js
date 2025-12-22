@@ -1,3 +1,4 @@
+
 import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
@@ -7,7 +8,7 @@ const app = express();
 // --- Configuration ---
 const LINGA_API_KEY = process.env.LINGA_API_KEY || "UiSg7JagVOd42IEwAnctfWS6qSTaKxxr";
 const LINGAPOS_BASE_URL = "https://api.lingaros.com"; 
-const AXIOS_TIMEOUT = 240000; // Increase to 4 minutes for large ranges
+const AXIOS_TIMEOUT = 120000; // Adjusted to 2 mins for Vercel limits
 
 // --- Middleware ---
 app.use(cors({
@@ -19,27 +20,28 @@ app.use(express.json());
 // --- Helper Function ---
 async function callExternalApi(url, params = {}) {
     const start = Date.now();
-    console.log(`[Backend] Requesting: ${url} with params: ${JSON.stringify(params)}`);
+    console.log(`[Proxy Request] Range: ${params.fromDate} to ${params.toDate} for ${url}`);
     try {
         const response = await axios.get(url, {
             headers: { 
                 'apikey': LINGA_API_KEY,
                 'Content-Type': 'application/json',
-                'User-Agent': 'LingaPOS-Analytics/2.5'
+                'User-Agent': 'LingaPOS-Analytics-Enterprise/3.0'
             },
             params: params,
-            timeout: AXIOS_TIMEOUT
+            timeout: AXIOS_TIMEOUT,
+            maxContentLength: Infinity,
+            maxBodyLength: Infinity
         });
         const duration = Date.now() - start;
-        console.log(`[Backend] Success (${duration}ms): ${url}`);
+        console.log(`[Proxy Response] OK in ${duration}ms: ${url}`);
         return response;
     } catch (error) {
         const duration = Date.now() - start;
         if (axios.isAxiosError(error)) {
             const status = error.response?.status || 500;
             const msg = error.response?.data?.message || error.message;
-            console.error(`[Backend Error ${status}] after ${duration}ms for ${url}: ${msg}`);
-            
+            console.error(`[Proxy Error ${status}] after ${duration}ms: ${msg}`);
             const err = new Error(msg);
             // @ts-ignore
             err.status = status;
@@ -47,7 +49,6 @@ async function callExternalApi(url, params = {}) {
             err.data = error.response?.data;
             throw err;
         }
-        console.error(`[Unexpected Error] after ${duration}ms for ${url}: ${error.message}`);
         throw error;
     }
 }
@@ -125,7 +126,7 @@ app.get('/api/v1/lingapos/store/:storeId/saleSummaryReport', async (req, res) =>
 const PORT = process.env.PORT || 3000;
 if (process.env.NODE_ENV !== 'production') {
     app.listen(PORT, () => {
-        console.log(`\n🚀 Backend running on http://localhost:${PORT}`);
+        console.log(`Backend Active: http://localhost:${PORT}`);
     });
 }
 
