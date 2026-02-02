@@ -25,10 +25,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [storeList, setStoreList] = useState<Store[]>([]);
   const [selectedStore, setSelectedStore] = useState<string>("");
   const [fromDate, setFromDate] = useState<string>(
-    new Date().toISOString().split("T")[0]
+    new Date().toISOString().split("T")[0],
   );
   const [toDate, setToDate] = useState<string>(
-    new Date().toISOString().split("T")[0]
+    new Date().toISOString().split("T")[0],
   );
   const [desiredLiveMode, setDesiredLiveMode] = useState<boolean>(true);
 
@@ -55,14 +55,34 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
           available = stores.filter((s) => user.allowedStores!.includes(s.id));
         }
         setStoreList(available);
-        if (available.length > 0 && !selectedStore)
+        if (available.length > 0 && !selectedStore) {
           setSelectedStore(available[0].id);
+        }
       } catch (e) {
         console.error("Initialization failed", e);
       }
     };
     init();
   }, [user]);
+
+  // MANDATORY: Clear data when any filter changes to lock the export button
+  const handleStoreChange = (id: string) => {
+    setSelectedStore(id);
+    setData(null); // Lock download button
+    setErrorMsg(null);
+  };
+
+  const handleFromDateChange = (val: string) => {
+    setFromDate(val);
+    setData(null); // Lock download button
+    setErrorMsg(null);
+  };
+
+  const handleToDateChange = (val: string) => {
+    setToDate(val);
+    setData(null); // Lock download button
+    setErrorMsg(null);
+  };
 
   const loadData = async () => {
     if (!selectedStore) return;
@@ -76,7 +96,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         new Date(fromDate),
         new Date(toDate),
         !desiredLiveMode,
-        (msg) => setSyncProgress(msg)
+        (msg) => setSyncProgress(msg),
       );
       setData(result);
     } catch (err: any) {
@@ -102,8 +122,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     view === "OVERVIEW"
       ? "Analytics Overview"
       : view === "REPORTS"
-      ? "Reports & Recap"
-      : "System Configuration";
+        ? "Reports & Recap"
+        : "System Configuration";
 
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-slate-950 font-sans text-slate-900 dark:text-slate-100 overflow-hidden transition-colors duration-300">
@@ -124,11 +144,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
           <DashboardFilters
             storeList={storeList}
             selectedStore={selectedStore}
-            setSelectedStore={setSelectedStore}
+            setSelectedStore={handleStoreChange}
             fromDate={fromDate}
-            setFromDate={setFromDate}
+            setFromDate={handleFromDateChange}
             toDate={toDate}
-            setToDate={setToDate}
+            setToDate={handleToDateChange}
             loading={loading}
             syncProgress={syncProgress}
             onRefresh={loadData}

@@ -155,24 +155,19 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
 
   return (
     <div className="p-8 space-y-6 animate-fadeIn max-w-[1400px] mx-auto transition-colors duration-300">
-      <div className="flex gap-4 border-b border-slate-200 dark:border-slate-800 pb-1">
+      <div className="flex gap-4 border-b border-slate-200 dark:border-slate-800 pb-1 overflow-x-auto custom-scrollbar">
         <button
-          onClick={() => setTab("STORES")}
-          className={`px-4 py-2 text-sm font-bold border-b-2 transition-all ${
-            tab === "STORES"
-              ? "border-rose-600 text-rose-600 dark:text-rose-400"
-              : "text-slate-400"
-          }`}
+          onClick={() => {
+            setTab("STORES");
+            resetUserForm();
+          }}
+          className={`px-4 py-2 text-sm font-bold border-b-2 transition-all whitespace-nowrap ${tab === "STORES" ? "border-rose-600 text-rose-600 dark:text-rose-400" : "text-slate-400"}`}
         >
           Store Locations
         </button>
         <button
           onClick={() => setTab("USERS")}
-          className={`px-4 py-2 text-sm font-bold border-b-2 transition-all ${
-            tab === "USERS"
-              ? "border-rose-600 text-rose-600 dark:text-rose-400"
-              : "text-slate-400"
-          }`}
+          className={`px-4 py-2 text-sm font-bold border-b-2 transition-all whitespace-nowrap ${tab === "USERS" ? "border-rose-600 text-rose-600 dark:text-rose-400" : "text-slate-400"}`}
         >
           System Access
         </button>
@@ -193,8 +188,8 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                 {tab === "STORES"
                   ? "New Store Location"
                   : isEditingUser
-                  ? `Edit User: ${userForm.username}`
-                  : "New User Account"}
+                    ? `Modify Account: ${userForm.username}`
+                    : "New User Account"}
               </span>
               {tab === "USERS" && isEditingUser && (
                 <button
@@ -261,7 +256,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
-                      User ID
+                      User ID (Username)
                     </label>
                     <input
                       value={userForm.username}
@@ -269,7 +264,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                         setUserForm({ ...userForm, username: e.target.value })
                       }
                       disabled={isEditingUser}
-                      placeholder="Login Username"
+                      placeholder="Login ID"
                       className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 disabled:opacity-50"
                     />
                   </div>
@@ -293,7 +288,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
 
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
-                    System Role
+                    System Privilege Level
                   </label>
                   <select
                     value={userForm.role}
@@ -302,12 +297,14 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                     }
                     className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
                   >
-                    <option value="user">Store User (Restricted Access)</option>
+                    <option value="user">
+                      Restricted User (Specific Store Access)
+                    </option>
                     <option value="admin">
-                      Admin (Full Access, No Config)
+                      Administrator (All Stores, No System Edits)
                     </option>
                     <option value="superuser">
-                      Super Admin (Full Control)
+                      Super Admin (Full System Access)
                     </option>
                   </select>
                 </div>
@@ -315,7 +312,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                 {userForm.role === "user" && (
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
-                      Assigned Store Access
+                      Store Assignment (Multi-Select)
                     </label>
                     <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-4 max-h-48 overflow-y-auto custom-scrollbar space-y-2">
                       {stores.map((store) => (
@@ -335,8 +332,8 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                         </label>
                       ))}
                       {stores.length === 0 && (
-                        <p className="text-xs text-slate-400 italic">
-                          No stores defined yet.
+                        <p className="text-xs text-slate-400 italic text-center py-2">
+                          No registered stores found.
                         </p>
                       )}
                     </div>
@@ -349,10 +346,10 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                   className="w-full py-3.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-rose-600/20 transition-all"
                 >
                   {loading
-                    ? "Saving..."
+                    ? "Processing..."
                     : isEditingUser
-                    ? "Update Permissions"
-                    : "Create User Account"}
+                      ? "Confirm Account Changes"
+                      : "Register New User"}
                 </button>
               </form>
             )}
@@ -364,19 +361,18 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
           <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm transition-colors h-full flex flex-col">
             <div className="px-6 py-4 bg-slate-50 dark:bg-slate-950 border-b border-slate-100 dark:border-slate-800">
               <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em]">
-                Registered {tab === "STORES" ? "Locations" : "Access Accounts"}
+                Active{" "}
+                {tab === "STORES" ? "Venue Registry" : "Authorized Personnel"}
               </h3>
             </div>
-            <div className="overflow-auto flex-1">
+            <div className="overflow-auto flex-1 custom-scrollbar">
               <table className="w-full text-left text-sm">
                 <thead className="bg-slate-50 dark:bg-slate-950 text-slate-400 uppercase text-[10px] font-bold sticky top-0 z-10">
                   <tr>
                     <th className="px-6 py-4">
-                      {tab === "STORES"
-                        ? "Store Name / ID"
-                        : "Identity & Access"}
+                      {tab === "STORES" ? "Venue Details" : "Identity & Rights"}
                     </th>
-                    <th className="px-6 py-4 text-right">Management Actions</th>
+                    <th className="px-6 py-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -396,12 +392,20 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                             </p>
                           ) : (
                             <div className="flex gap-2 items-center mt-1">
-                              <span className="text-[9px] px-1.5 py-0.5 bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 rounded-md font-black uppercase tracking-wider">
+                              <span
+                                className={`text-[9px] px-1.5 py-0.5 rounded-md font-black uppercase tracking-wider ${
+                                  item.role === "superuser"
+                                    ? "bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400"
+                                    : item.role === "admin"
+                                      ? "bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400"
+                                      : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+                                }`}
+                              >
                                 {item.role}
                               </span>
                               {item.role === "user" && (
                                 <p className="text-[9px] text-slate-400 font-bold uppercase truncate max-w-[150px]">
-                                  {item.allowedStores?.length || 0} Stores
+                                  {item.allowedStores?.length || 0} Venues
                                   Assigned
                                 </p>
                               )}
@@ -427,7 +431,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                                 }
                                 className="text-emerald-600 font-black text-[10px] uppercase hover:underline"
                               >
-                                Save
+                                Apply
                               </button>
                               <button
                                 onClick={() => setEditingPassword(null)}
@@ -440,17 +444,43 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                             <>
                               <button
                                 onClick={() => handleEditUser(item)}
-                                className="text-slate-500 hover:text-rose-600 font-black text-[10px] uppercase transition-colors"
+                                className="text-slate-500 hover:text-rose-600 font-black text-[10px] uppercase transition-all flex items-center gap-1"
                               >
-                                Edit Access
+                                <svg
+                                  className="w-3 h-3"
+                                  fill="none"
+                                  viewBox="0 0 24 24"
+                                  stroke="currentColor"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M11 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                                  />
+                                </svg>
+                                Edit
                               </button>
                               <button
                                 onClick={() =>
                                   setEditingPassword(item.username)
                                 }
-                                className="text-slate-500 hover:text-rose-600 font-black text-[10px] uppercase transition-colors"
+                                className="text-slate-500 hover:text-rose-600 font-black text-[10px] uppercase transition-all flex items-center gap-1"
                               >
-                                Reset Pass
+                                <svg
+                                  className="w-3 h-3"
+                                  fill="none"
+                                  viewBox="0 0 24 24"
+                                  stroke="currentColor"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                                  />
+                                </svg>
+                                Pin
                               </button>
                             </>
                           ) : null}
@@ -461,8 +491,21 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                                 : handleDeleteUser(item.username)
                             }
                             className="text-slate-300 group-hover:text-red-500 font-black text-[10px] uppercase transition-colors"
+                            title="Remove Permanently"
                           >
-                            Remove
+                            <svg
+                              className="w-4 h-4"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                              />
+                            </svg>
                           </button>
                         </div>
                       </td>
@@ -474,7 +517,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                         colSpan={2}
                         className="px-6 py-12 text-center text-slate-400 italic"
                       >
-                        No records found.
+                        Inventory empty. No entries to display.
                       </td>
                     </tr>
                   )}
