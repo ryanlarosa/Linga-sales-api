@@ -24,8 +24,8 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
     const year = saleDate.getFullYear();
     const formattedDate = `${day}-${month}-${year}`;
 
-    const floorName =
-      data.floors.find((f) => f.id === item.floorId)?.floorName || "Unknown";
+    //const floorName =
+    //  data.floors.find((f) => f.id === item.floorId)?.floorName || "Unknown";
     const createdBy =
       data.users.find((u) => u.id === item.employee)?.name || "Unknown";
     const closedBy =
@@ -42,8 +42,8 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
       Ticket_No: item.ticketNo,
       Customer_Name: item.customerName,
       Sale_Open_Time: item.saleOpenTime,
-      Floor: floorName,
-      Floor_No: floorNo,
+      //Floor: floorName,
+      Floor: floorNo,
       Table_No: item.tableNo,
       Net_Sales: parseNum(summary?.netSales),
       Total_Tax: parseNum(summary?.totalTaxAmount),
