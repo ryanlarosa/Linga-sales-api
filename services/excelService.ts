@@ -35,6 +35,9 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
     const floorNo =
       data.saleSummary.find((s) => s.id === item.id)?.floorNo || "Unknown";
 
+    const tableNo =
+      data.saleSummary.find((s) => s.id === item.id)?.tableNo || "Unknown";
+
     const summary = data.saleSummary.find((s) => s.id === item.id);
 
     return {
@@ -44,7 +47,7 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
       Sale_Open_Time: item.saleOpenTime,
       //Floor: floorName,
       Floor: floorNo,
-      Table_No: item.tableNo,
+      Table_No: tableNo,
       Net_Sales: parseNum(summary?.netSales),
       Total_Tax: parseNum(summary?.totalTaxAmount),
       Discount: parseNum(summary?.discounts),

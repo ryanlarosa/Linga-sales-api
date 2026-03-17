@@ -42,6 +42,7 @@ export interface SaleSummary {
   totalTaxAmount: string;
   saleOpenDate?: string;
   floorNo?: string;
+  tableNo?: string;
 }
 
 export interface DiscountDetail {
