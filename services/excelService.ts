@@ -63,24 +63,30 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
   const filteredDiscountData = data.saleDetails.filter(
     (item) => item.check !== "Total",
   );
-  const discountData = filteredDiscountData.map((item) => ({
-    Store: selectedStoreName,
-    Approved_By: item.approvedBy,
-    Check: item.check, // Mapped to Link to Ticket
-    Date: item.date,
-    Discount_Amount: parseNum(item.discountAmtStr),
-    Discount_Applied_By: item.discountAppliedBy,
-    Discount_Coupon: item.discountCoupon,
-    Discount_Name: item.discountName,
-    Discount_Type: item.discountType,
-    Gross_Sales: parseNum(item.grossSalesStr),
-    Is_Total: item.isTotal,
-    Menu_Items: item.menuItems,
-    Percent: item.percent,
-    Quantity: item.quantity,
-    Reason: item.reason,
-    Total_Discounts: parseNum(item.totalDiscounts),
-  }));
+  const discountData = filteredDiscountData.map((item) => {
+    const saleOpenTime =
+      data.sales.find((s) => s.ticketNo === item.check)?.saleOpenTime ||
+      "Unknown";
+    return {
+      Store: selectedStoreName,
+      Approved_By: item.approvedBy,
+      Check: item.check, // Mapped to Link to Ticket
+      Date: item.date,
+      Sale_Open_Time: saleOpenTime,
+      Discount_Amount: parseNum(item.discountAmtStr),
+      Discount_Applied_By: item.discountAppliedBy,
+      Discount_Coupon: item.discountCoupon,
+      Discount_Name: item.discountName,
+      Discount_Type: item.discountType,
+      Gross_Sales: parseNum(item.grossSalesStr),
+      Is_Total: item.isTotal,
+      Menu_Items: item.menuItems,
+      Percent: item.percent,
+      Quantity: item.quantity,
+      Reason: item.reason,
+      Total_Discounts: parseNum(item.totalDiscounts),
+    };
+  });
 
   // SHEET 3: MenuItemDetailed
   const menuItemData = data.detailedMenu.map((item) => {
