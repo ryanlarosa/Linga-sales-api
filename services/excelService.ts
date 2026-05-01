@@ -81,7 +81,7 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
       Store: selectedStoreName,
       Approved_By: item.approvedBy,
       Check: item.check, // Mapped to Link to Ticket
-      Date: item.date,
+      //Date: item.date,
       SaleDate: formattedDate,
       Sale_Open_Time: saleOpenTime,
       Discount_Amount: parseNum(item.discountAmtStr),
