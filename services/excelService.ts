@@ -147,7 +147,7 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
           const discountGrossSales = parseNum(item.grossSalesStr);
           matchedSale =
             potentialMatches.find((s) => {
-              const saleGross = parseNum(s.grossAmountStr);
+              const saleGross = parseNum(s.grossReceiptStr);
               // Check if the gross amounts are close (within 1% tolerance)
               return (
                 Math.abs(saleGross - discountGrossSales) < saleGross * 0.01
