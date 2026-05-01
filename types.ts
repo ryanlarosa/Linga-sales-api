@@ -13,7 +13,6 @@ export interface Store {
 
 export interface SaleOrder {
   id: string;
-  saleDate: string;
   ticketNo: string;
   startDate: string;
   saleOpenTime: string;
