@@ -86,41 +86,65 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
   const filteredDiscountData = data.saleDetails.filter(
     (item) => item.check !== "Total",
   );
+
+  // Helper function to parse discount date format (e.g., "28-Apr-2026")
+  const parseDiscountDate = (dateStr: string): string => {
+    if (!dateStr) return "";
+    // Handle format like "28-Apr-2026"
+    const months: Record<string, string> = {
+      Jan: "01",
+      Feb: "02",
+      Mar: "03",
+      Apr: "04",
+      May: "05",
+      Jun: "06",
+      Jul: "07",
+      Aug: "08",
+      Sep: "09",
+      Oct: "10",
+      Nov: "11",
+      Dec: "12",
+    };
+    const parts = dateStr.split("-");
+    if (parts.length === 3) {
+      const day = parts[0].trim();
+      const month = months[parts[1].trim()] || "01";
+      const year = parts[2].trim();
+      return `${year}-${month}-${day.padStart(2, "0")}`;
+    }
+    return dateStr;
+  };
+
   const discountData = filteredDiscountData.map((item) => {
     let saleOpenTime = "Unknown";
     let saleDate = "Unknown";
 
     if (item.check && item.date) {
-      const discountDatePart = item.date.split("T")[0];
-      const discountDateTime = new Date(item.date);
-      const discountTime = !isNaN(discountDateTime.getTime())
-        ? `${String(discountDateTime.getHours()).padStart(2, "0")}:${String(discountDateTime.getMinutes()).padStart(2, "0")}`
-        : null;
+      // Parse discount date to ISO format (YYYY-MM-DD)
+      const discountDatePart = parseDiscountDate(item.date);
 
-      if (discountTime) {
-        const compositeKeyWithTime = `${item.check}_${discountDatePart}_${discountTime}`;
-        const matchedSale = salesByTicketDateTime.get(compositeKeyWithTime);
-        if (matchedSale) {
-          saleOpenTime = matchedSale.saleOpenTime;
-          saleDate = matchedSale.startDate;
-        }
+      // First try: match by ticketNo + parsed discount date
+      const potentialMatches = data.sales.filter(
+        (s) =>
+          s.ticketNo === item.check &&
+          s.startDate?.split("T")[0] === discountDatePart,
+      );
+
+      if (potentialMatches.length > 0) {
+        const matchedSale = potentialMatches[0];
+        saleOpenTime = matchedSale.saleOpenTime;
+        saleDate = matchedSale.startDate;
       }
 
+      // Second try: if no match by discount date, try to match by ticketNo only
+      // This handles cases where discount was applied on a different date than sale opened
       if (saleOpenTime === "Unknown") {
-        const compositeKey = `${item.check}_${discountDatePart}`;
-        const matchedSale = salesByTicketAndDate.get(compositeKey);
-        if (matchedSale) {
+        const allMatches = data.sales.filter((s) => s.ticketNo === item.check);
+        if (allMatches.length > 0) {
+          const matchedSale = allMatches[0];
           saleOpenTime = matchedSale.saleOpenTime;
           saleDate = matchedSale.startDate;
         }
-      }
-    }
-
-    if (saleOpenTime === "Unknown") {
-      const fallbackSale = data.sales.find((s) => s.ticketNo === item.check);
-      if (fallbackSale) {
-        saleOpenTime = fallbackSale.saleOpenTime;
-        saleDate = fallbackSale.startDate;
       }
     }
 
