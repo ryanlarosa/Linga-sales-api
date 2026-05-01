@@ -65,8 +65,7 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
   );
   const discountData = filteredDiscountData.map((item) => {
     const saleOpenTime =
-      data.sales.find((s) => s.ticketNo === item.check)?.saleOpenTime ||
-      "Unknown";
+      data.sales.find((s) => s.id === item.id)?.saleOpenTime || "Unknown";
 
     const saleDate =
       data.sales.find((s) => s.id === item.id)?.startDate || "Unknown";
