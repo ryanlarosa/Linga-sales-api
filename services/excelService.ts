@@ -122,29 +122,41 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
     if (item.check && item.date) {
       // Parse discount date to ISO format (YYYY-MM-DD)
       const discountDatePart = parseDiscountDate(item.date);
+      const discountAmount = parseNum(item.discountAmtStr);
 
       // First try: match by ticketNo + parsed discount date
-      const potentialMatches = data.sales.filter(
+      let potentialMatches = data.sales.filter(
         (s) =>
           s.ticketNo === item.check &&
           s.startDate?.split("T")[0] === discountDatePart,
       );
 
-      if (potentialMatches.length > 0) {
-        const matchedSale = potentialMatches[0];
-        saleOpenTime = matchedSale.saleOpenTime;
-        saleDate = matchedSale.startDate;
+      // If no match by discount date, try to match by ticketNo only
+      if (potentialMatches.length === 0) {
+        potentialMatches = data.sales.filter((s) => s.ticketNo === item.check);
       }
 
-      // Second try: if no match by discount date, try to match by ticketNo only
-      // This handles cases where discount was applied on a different date than sale opened
-      if (saleOpenTime === "Unknown") {
-        const allMatches = data.sales.filter((s) => s.ticketNo === item.check);
-        if (allMatches.length > 0) {
-          const matchedSale = allMatches[0];
-          saleOpenTime = matchedSale.saleOpenTime;
-          saleDate = matchedSale.startDate;
+      if (potentialMatches.length > 0) {
+        // If there's only one match, use it
+        // If there are multiple matches, try to find the one with matching discount amount
+        let matchedSale = potentialMatches[0];
+
+        if (potentialMatches.length > 1 && discountAmount > 0) {
+          // Try to find a sale that has a discount amount matching the discount data
+          // by comparing grossSalesStr from discount with grossAmountStr from sale
+          const discountGrossSales = parseNum(item.grossSalesStr);
+          matchedSale =
+            potentialMatches.find((s) => {
+              const saleGross = parseNum(s.grossAmountStr);
+              // Check if the gross amounts are close (within 1% tolerance)
+              return (
+                Math.abs(saleGross - discountGrossSales) < saleGross * 0.01
+              );
+            }) || potentialMatches[0];
         }
+
+        saleOpenTime = matchedSale.saleOpenTime;
+        saleDate = matchedSale.startDate;
       }
     }
 
