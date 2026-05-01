@@ -90,18 +90,13 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
     let saleOpenTime = "Unknown";
     let saleDate = "Unknown";
 
-    // Strategy: Match by ticketNo + date + opentime (from discount's date if available)
     if (item.check && item.date) {
       const discountDatePart = item.date.split("T")[0];
-
-      // First try: exact match with time (ticket + date + time from discount date)
-      // Since discount date might include time, try to extract it
       const discountDateTime = new Date(item.date);
       const discountTime = !isNaN(discountDateTime.getTime())
         ? `${String(discountDateTime.getHours()).padStart(2, "0")}:${String(discountDateTime.getMinutes()).padStart(2, "0")}`
         : null;
 
-      // Try exact match with time if available
       if (discountTime) {
         const compositeKeyWithTime = `${item.check}_${discountDatePart}_${discountTime}`;
         const matchedSale = salesByTicketDateTime.get(compositeKeyWithTime);
@@ -111,7 +106,6 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
         }
       }
 
-      // Second try: match by ticketNo + date only
       if (saleOpenTime === "Unknown") {
         const compositeKey = `${item.check}_${discountDatePart}`;
         const matchedSale = salesByTicketAndDate.get(compositeKey);
@@ -122,7 +116,6 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
       }
     }
 
-    // Final fallback: match by ticketNo only (least precise)
     if (saleOpenTime === "Unknown") {
       const fallbackSale = data.sales.find((s) => s.ticketNo === item.check);
       if (fallbackSale) {
