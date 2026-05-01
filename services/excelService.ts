@@ -59,12 +59,23 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
     };
   });
 
-  // Create a map of sales by composite key: ticketNo + startDate (date only, not time)
-  // This ensures unique matching even when ticket numbers repeat across different dates
+  // Create a map of sales by composite key: ticketNo + startDate + saleOpenTime (hour:minute)
+  // This ensures unique matching even when ticket numbers repeat across different dates/times
+  const salesByTicketDateTime = new Map<string, (typeof data.sales)[0]>();
+  data.sales.forEach((sale) => {
+    if (sale.ticketNo && sale.startDate && sale.saleOpenTime) {
+      // Extract date part and normalize time (take first 5 chars: "HH:mm")
+      const saleDatePart = sale.startDate.split("T")[0];
+      const saleTimePart = sale.saleOpenTime.substring(0, 5); // "HH:mm" format
+      const compositeKey = `${sale.ticketNo}_${saleDatePart}_${saleTimePart}`;
+      salesByTicketDateTime.set(compositeKey, sale);
+    }
+  });
+
+  // Also create a map by ticketNo + date only (for fallback when time not available)
   const salesByTicketAndDate = new Map<string, (typeof data.sales)[0]>();
   data.sales.forEach((sale) => {
     if (sale.ticketNo && sale.startDate) {
-      // Extract just the date part from startDate (e.g., "2024-01-15T00:00:00.000Z" -> "2024-01-15")
       const saleDatePart = sale.startDate.split("T")[0];
       const compositeKey = `${sale.ticketNo}_${saleDatePart}`;
       salesByTicketAndDate.set(compositeKey, sale);
@@ -76,23 +87,42 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
     (item) => item.check !== "Total",
   );
   const discountData = filteredDiscountData.map((item) => {
-    // Try to match by composite key first (ticketNo + date), then fall back to ticketNo only
     let saleOpenTime = "Unknown";
     let saleDate = "Unknown";
 
-    // First attempt: match by ticketNo + date from the discount's date field
-    if (item.date) {
+    // Strategy: Match by ticketNo + date + opentime (from discount's date if available)
+    if (item.check && item.date) {
       const discountDatePart = item.date.split("T")[0];
-      const compositeKey = `${item.check}_${discountDatePart}`;
-      const matchedSale = salesByTicketAndDate.get(compositeKey);
-      if (matchedSale) {
-        saleOpenTime = matchedSale.saleOpenTime;
-        saleDate = matchedSale.startDate;
+
+      // First try: exact match with time (ticket + date + time from discount date)
+      // Since discount date might include time, try to extract it
+      const discountDateTime = new Date(item.date);
+      const discountTime = !isNaN(discountDateTime.getTime())
+        ? `${String(discountDateTime.getHours()).padStart(2, "0")}:${String(discountDateTime.getMinutes()).padStart(2, "0")}`
+        : null;
+
+      // Try exact match with time if available
+      if (discountTime) {
+        const compositeKeyWithTime = `${item.check}_${discountDatePart}_${discountTime}`;
+        const matchedSale = salesByTicketDateTime.get(compositeKeyWithTime);
+        if (matchedSale) {
+          saleOpenTime = matchedSale.saleOpenTime;
+          saleDate = matchedSale.startDate;
+        }
+      }
+
+      // Second try: match by ticketNo + date only
+      if (saleOpenTime === "Unknown") {
+        const compositeKey = `${item.check}_${discountDatePart}`;
+        const matchedSale = salesByTicketAndDate.get(compositeKey);
+        if (matchedSale) {
+          saleOpenTime = matchedSale.saleOpenTime;
+          saleDate = matchedSale.startDate;
+        }
       }
     }
 
-    // Fallback: if no match by composite key, try matching by ticketNo only
-    // This handles cases where discount date might not be properly set
+    // Final fallback: match by ticketNo only (least precise)
     if (saleOpenTime === "Unknown") {
       const fallbackSale = data.sales.find((s) => s.ticketNo === item.check);
       if (fallbackSale) {
