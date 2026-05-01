@@ -67,11 +67,15 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
     const saleOpenTime =
       data.sales.find((s) => s.ticketNo === item.check)?.saleOpenTime ||
       "Unknown";
+
+    const saleDate =
+      data.sales.find((s) => s.ticketNo === item.check)?.saleDate || "Unknown";
     return {
       Store: selectedStoreName,
       Approved_By: item.approvedBy,
       Check: item.check, // Mapped to Link to Ticket
       Date: item.date,
+      SaleDate: saleDate,
       Sale_Open_Time: saleOpenTime,
       Discount_Amount: parseNum(item.discountAmtStr),
       Discount_Applied_By: item.discountAppliedBy,
