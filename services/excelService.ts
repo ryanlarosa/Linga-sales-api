@@ -69,7 +69,7 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
       "Unknown";
 
     const saleDate =
-      data.sales.find((s) => s.ticketNo === item.check)?.startDate || "Unknown";
+      data.sales.find((s) => s.id === item.id)?.startDate || "Unknown";
 
     const saleDateObj = new Date(saleDate);
     const day = String(saleDateObj.getDate()).padStart(2, "0");
