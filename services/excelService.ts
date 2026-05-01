@@ -122,35 +122,26 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
     if (item.check && item.date) {
       // Parse discount date to ISO format (YYYY-MM-DD)
       const discountDatePart = parseDiscountDate(item.date);
-      const discountAmount = parseNum(item.discountAmtStr);
+      const discountGrossSales = parseNum(item.grossSalesStr);
 
-      // First try: match by ticketNo + parsed discount date
+      // Get all sales with matching ticket number
       let potentialMatches = data.sales.filter(
-        (s) =>
-          s.ticketNo === item.check &&
-          s.startDate?.split("T")[0] === discountDatePart,
+        (s) => s.ticketNo === item.check,
       );
 
-      // If no match by discount date, try to match by ticketNo only
-      if (potentialMatches.length === 0) {
-        potentialMatches = data.sales.filter((s) => s.ticketNo === item.check);
-      }
-
       if (potentialMatches.length > 0) {
-        // If there's only one match, use it
-        // If there are multiple matches, try to find the one with matching discount amount
         let matchedSale = potentialMatches[0];
 
-        if (potentialMatches.length > 1 && discountAmount > 0) {
-          // Try to find a sale that has a discount amount matching the discount data
-          // by comparing grossSalesStr from discount with grossAmountStr from sale
-          const discountGrossSales = parseNum(item.grossSalesStr);
+        // If there's more than one sale with same ticket number, match by amount
+        if (potentialMatches.length > 1) {
+          // Try to find a sale where grossReceiptStr matches grossSalesStr (within tolerance)
           matchedSale =
             potentialMatches.find((s) => {
-              const saleGross = parseNum(s.grossReceiptStr);
-              // Check if the gross amounts are close (within 1% tolerance)
+              const saleGrossReceipt = parseNum(s.grossReceiptStr);
+              // Check if the amounts are close (within 2% tolerance)
               return (
-                Math.abs(saleGross - discountGrossSales) < saleGross * 0.01
+                Math.abs(saleGrossReceipt - discountGrossSales) <
+                saleGrossReceipt * 0.02
               );
             }) || potentialMatches[0];
         }
