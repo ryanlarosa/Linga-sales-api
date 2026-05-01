@@ -59,16 +59,47 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
     };
   });
 
+  // Create a map of sales by composite key: ticketNo + startDate (date only, not time)
+  // This ensures unique matching even when ticket numbers repeat across different dates
+  const salesByTicketAndDate = new Map<string, (typeof data.sales)[0]>();
+  data.sales.forEach((sale) => {
+    if (sale.ticketNo && sale.startDate) {
+      // Extract just the date part from startDate (e.g., "2024-01-15T00:00:00.000Z" -> "2024-01-15")
+      const saleDatePart = sale.startDate.split("T")[0];
+      const compositeKey = `${sale.ticketNo}_${saleDatePart}`;
+      salesByTicketAndDate.set(compositeKey, sale);
+    }
+  });
+
   // SHEET 2: DiscountData
   const filteredDiscountData = data.saleDetails.filter(
     (item) => item.check !== "Total",
   );
   const discountData = filteredDiscountData.map((item) => {
-    const saleOpenTime =
-      data.sales.find((s) => s.id === item.id)?.saleOpenTime || "Unknown";
+    // Try to match by composite key first (ticketNo + date), then fall back to ticketNo only
+    let saleOpenTime = "Unknown";
+    let saleDate = "Unknown";
 
-    const saleDate =
-      data.sales.find((s) => s.id === item.id)?.startDate || "Unknown";
+    // First attempt: match by ticketNo + date from the discount's date field
+    if (item.date) {
+      const discountDatePart = item.date.split("T")[0];
+      const compositeKey = `${item.check}_${discountDatePart}`;
+      const matchedSale = salesByTicketAndDate.get(compositeKey);
+      if (matchedSale) {
+        saleOpenTime = matchedSale.saleOpenTime;
+        saleDate = matchedSale.startDate;
+      }
+    }
+
+    // Fallback: if no match by composite key, try matching by ticketNo only
+    // This handles cases where discount date might not be properly set
+    if (saleOpenTime === "Unknown") {
+      const fallbackSale = data.sales.find((s) => s.ticketNo === item.check);
+      if (fallbackSale) {
+        saleOpenTime = fallbackSale.saleOpenTime;
+        saleDate = fallbackSale.startDate;
+      }
+    }
 
     const saleDateObj = new Date(saleDate);
     const day = String(saleDateObj.getDate()).padStart(2, "0");
@@ -98,6 +129,19 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
     };
   });
 
+  // Also create a map for saleDetails by composite key for MenuItem matching
+  const saleDetailsByTicketAndDate = new Map<
+    string,
+    (typeof data.saleDetails)[0]
+  >();
+  data.saleDetails.forEach((detail) => {
+    if (detail.check && detail.date) {
+      const detailDatePart = detail.date.split("T")[0];
+      const compositeKey = `${detail.check}_${detailDatePart}`;
+      saleDetailsByTicketAndDate.set(compositeKey, detail);
+    }
+  });
+
   // SHEET 3: MenuItemDetailed
   const menuItemData = data.detailedMenu.map((item) => {
     const saleDate = new Date(item.saleDate);
@@ -109,11 +153,21 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
 
     const voidBy =
       data.users.find((u) => u.id === item.voidByEmployee)?.name || "Unknown";
-    const discountName =
-      data.saleDetails.find(
-        (d) =>
-          d.check === item.saleId && item.totalDiscountAmountStr !== "0.00",
-      )?.discountName || "N/A";
+
+    // Match discount by composite key (ticketNo + date) for accuracy
+    let discountName = "N/A";
+    if (item.saleId && item.saleDate) {
+      const menuItemDatePart = item.saleDate.split("T")[0];
+      const compositeKey = `${item.saleId}_${menuItemDatePart}`;
+      const matchedDetail = saleDetailsByTicketAndDate.get(compositeKey);
+      if (
+        matchedDetail &&
+        matchedDetail.discountName &&
+        item.totalDiscountAmountStr !== "0.00"
+      ) {
+        discountName = matchedDetail.discountName;
+      }
+    }
 
     return {
       Store: selectedStoreName,
