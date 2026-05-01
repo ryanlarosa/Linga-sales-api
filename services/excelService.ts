@@ -70,12 +70,19 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
 
     const saleDate =
       data.sales.find((s) => s.ticketNo === item.check)?.startDate || "Unknown";
+
+    const saleDateObj = new Date(saleDate);
+    const day = String(saleDateObj.getDate()).padStart(2, "0");
+    const month = String(saleDateObj.getMonth() + 1).padStart(2, "0");
+    const year = saleDateObj.getFullYear();
+    const formattedDate = `${day}-${month}-${year}`;
+
     return {
       Store: selectedStoreName,
       Approved_By: item.approvedBy,
       Check: item.check, // Mapped to Link to Ticket
       Date: item.date,
-      SaleDate: saleDate,
+      SaleDate: formattedDate,
       Sale_Open_Time: saleOpenTime,
       Discount_Amount: parseNum(item.discountAmtStr),
       Discount_Applied_By: item.discountAppliedBy,
