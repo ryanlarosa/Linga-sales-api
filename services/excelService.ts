@@ -69,7 +69,7 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
       "Unknown";
 
     const saleDate =
-      data.sales.find((s) => s.ticketNo === item.check)?.saleDate || "Unknown";
+      data.sales.find((s) => s.ticketNo === item.check)?.startDate || "Unknown";
     return {
       Store: selectedStoreName,
       Approved_By: item.approvedBy,
