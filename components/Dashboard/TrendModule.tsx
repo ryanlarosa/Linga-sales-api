@@ -30,6 +30,7 @@ const TrendModule: React.FC<TrendModuleProps> = ({ storeList, theme, anchorDate 
   const [progress, setProgress] = useState('');
 
   // Calculate the 4 anchor dates relative to the selected anchorDate
+  // Using 364 days (52 weeks) and 28 days (4 weeks) to ensure we compare the same day of the week
   const calculateAnchorDates = (anchor: string) => {
     const today = new Date(anchor);
     
@@ -37,10 +38,10 @@ const TrendModule: React.FC<TrendModuleProps> = ({ storeList, theme, anchorDate 
     lastWk.setDate(today.getDate() - 7);
     
     const lastMth = new Date(today);
-    lastMth.setMonth(today.getMonth() - 1);
+    lastMth.setDate(today.getDate() - 28);
     
     const lastYr = new Date(today);
-    lastYr.setFullYear(today.getFullYear() - 1);
+    lastYr.setDate(today.getDate() - 364);
 
     return [today, lastWk, lastMth, lastYr];
   };
