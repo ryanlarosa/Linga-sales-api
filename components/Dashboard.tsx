@@ -9,6 +9,7 @@ import DashboardHeader from "./Dashboard/DashboardHeader";
 import DashboardFilters from "./Dashboard/DashboardFilters";
 import OverviewModule from "./Dashboard/OverviewModule";
 import ReportsModule from "./Dashboard/ReportsModule";
+import TrendModule from "./Dashboard/TrendModule";
 import SettingsModule from "./Dashboard/SettingsModule";
 
 interface DashboardProps {
@@ -16,7 +17,7 @@ interface DashboardProps {
   onLogout: () => void;
 }
 
-type ViewMode = "OVERVIEW" | "REPORTS" | "SETTINGS";
+type ViewMode = "OVERVIEW" | "REPORTS" | "TRENDS" | "SETTINGS";
 
 const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [view, setView] = useState<ViewMode>("OVERVIEW");
@@ -192,6 +193,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
               toDate={toDate}
               selectedStoreName={currentStoreName}
             />
+          )}
+          {view === "TRENDS" && (
+            <TrendModule storeList={storeList} theme={theme} />
           )}
           {view === "SETTINGS" && <SettingsModule currentUser={user} />}
         </div>

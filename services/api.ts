@@ -341,3 +341,54 @@ export const fetchDashboardData = async (
 
   return aggregate;
 };
+
+/**
+ * Optimized fetch for Trend/Cover analysis.
+ * Only fetches the minimum data needed to calculate covers and net sales for specific dates.
+ */
+export const fetchStoreTrendSummary = async (
+  storeId: string,
+  dates: Date[]
+): Promise<Record<string, { covers: number; netSales: number }>> => {
+  const results: Record<string, { covers: number; netSales: number }> = {};
+
+  // Fetch in parallel for all dates
+  await Promise.all(
+    dates.map(async (date) => {
+      const formatted = formatDate(date);
+      const dateKey = formatted; // DD-MON-YYYY
+
+      try {
+        // We only need getsale (for guestCount) and saleSummary (for netSales verification)
+        const [salesData, summaryData] = await Promise.all([
+          fetchFromBackend(`/v1/lingapos/store/${storeId}/getsale?fromDate=${formatted}&toDate=${formatted}`),
+          fetchFromBackend(`/v1/lingapos/store/${storeId}/saleSummaryReport?dateOption=DR&fromDate=${formatted}&toDate=${formatted}`)
+        ]);
+
+        let dailyCovers = 0;
+        let dailyNet = 0;
+
+        // Apply logic from excelService.ts: only count if netSales > 0
+        if (salesData?.sales) {
+          salesData.sales.forEach((sale: any) => {
+            const summary = summaryData?.find((s: any) => s.id === sale.id);
+            const netSales = parseApiFloat(summary?.netSales || sale.netSalesStr);
+            
+            // User Logic: if Net Sales > 0, count the cover
+            if (netSales > 0) {
+              dailyCovers += sale.guestCount || 0;
+              dailyNet += netSales;
+            }
+          });
+        }
+
+        results[dateKey] = { covers: dailyCovers, netSales: dailyNet };
+      } catch (e) {
+        console.error(`Trend fetch failed for ${formatted}`, e);
+        results[dateKey] = { covers: 0, netSales: 0 };
+      }
+    })
+  );
+
+  return results;
+};
