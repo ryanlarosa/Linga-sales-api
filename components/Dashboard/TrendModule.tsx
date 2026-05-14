@@ -92,7 +92,7 @@ const TrendModule: React.FC<TrendModuleProps> = ({ storeList, theme, anchorDate 
   }, [trendData]);
 
   const handleExport = () => {
-    exportTrendToExcel(trendData, totals, anchorDate);
+    exportTrendToExcel(trendData, totals, anchorDate, anchorDates);
   };
 
   const formatVariance = (curr: number, prev: number) => {
@@ -108,6 +108,11 @@ const TrendModule: React.FC<TrendModuleProps> = ({ storeList, theme, anchorDate 
     { name: 'Last Week', covers: totals.lastWk, fill: '#cbd5e1' },
     { name: 'Selected Day', covers: totals.thisWk, fill: '#e11d48' },
   ];
+
+  const anchorDates = useMemo(() => calculateAnchorDates(anchorDate), [anchorDate]);
+  const formatDateTiny = (d: Date) => {
+    return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getFullYear()).slice(-2)}`;
+  };
 
   return (
     <div className="px-8 space-y-8 max-w-[1600px] mx-auto animate-fadeIn transition-all">
@@ -192,11 +197,31 @@ const TrendModule: React.FC<TrendModuleProps> = ({ storeList, theme, anchorDate 
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-50 dark:bg-slate-800/50">
-                    <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Venue Name</th>
-                    <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Selected Day</th>
-                    <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Last Week</th>
-                    <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Last Month</th>
-                    <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Last Year</th>
+                    <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500 border-b dark:border-slate-800">Venue Name</th>
+                    <th className="px-6 py-5 border-b dark:border-slate-800">
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Selected Day</span>
+                        <span className="text-[10px] font-bold text-rose-600">{formatDateTiny(anchorDates[0])}</span>
+                      </div>
+                    </th>
+                    <th className="px-6 py-5 border-b dark:border-slate-800">
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Last Week</span>
+                        <span className="text-[10px] font-bold text-slate-400">{formatDateTiny(anchorDates[1])}</span>
+                      </div>
+                    </th>
+                    <th className="px-6 py-5 border-b dark:border-slate-800">
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Last Month</span>
+                        <span className="text-[10px] font-bold text-slate-400">{formatDateTiny(anchorDates[2])}</span>
+                      </div>
+                    </th>
+                    <th className="px-6 py-5 border-b dark:border-slate-800">
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Last Year</span>
+                        <span className="text-[10px] font-bold text-slate-400">{formatDateTiny(anchorDates[3])}</span>
+                      </div>
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">

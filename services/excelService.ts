@@ -276,15 +276,20 @@ export const exportAnalysisToExcel = (
   XLSX.writeFile(wb, `${dimension}_Report_${storeName}.xlsx`);
 };
 
-export const exportTrendToExcel = (trendData: any[], totals: any, anchorDate: string) => {
+export const exportTrendToExcel = (trendData: any[], totals: any, anchorDate: string, anchorDates: Date[]) => {
   if (!trendData || trendData.length === 0) return;
+
+  const formatDate = (d: Date) => {
+    return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getFullYear()).slice(-2)}`;
+  };
 
   // Replicate the "Analysis" sheet style from Sample.xlsx
   const rows = [
-    ["Daily Covers tracker", "", "", "", "", "", ""],
-    ["Report Date:", anchorDate, "", "", "", "", ""],
-    ["", "", "", "", "", "", ""],
-    ["Venue", "This Wk", "Last Wk", "Last Mth", "Last Yr", "Var vs LW", "Var vs LM", "Var vs LY"],
+    ["Daily Covers tracker", "", "", "", "", "", "", ""],
+    ["Report Date:", anchorDate, "", "", "", "", "", ""],
+    ["", "", "", "", "", "", "", ""],
+    ["", "This Wk", "Last Wk", "Last Mth", "Last Yr", "Var LW", "Var LM", "Var LY"],
+    ["Venue", formatDate(anchorDates[0]), formatDate(anchorDates[1]), formatDate(anchorDates[2]), formatDate(anchorDates[3]), "", "", ""],
   ];
 
   // Total Row first (Company level)
