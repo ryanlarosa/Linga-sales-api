@@ -275,3 +275,52 @@ export const exportAnalysisToExcel = (
   XLSX.utils.book_append_sheet(wb, ws, dimension);
   XLSX.writeFile(wb, `${dimension}_Report_${storeName}.xlsx`);
 };
+
+export const exportTrendToExcel = (trendData: any[], totals: any, anchorDate: string) => {
+  if (!trendData || trendData.length === 0) return;
+
+  // Replicate the "Analysis" sheet style from Sample.xlsx
+  const rows = [
+    ["Daily Covers tracker", "", "", "", "", "", ""],
+    ["Report Date:", anchorDate, "", "", "", "", ""],
+    ["", "", "", "", "", "", ""],
+    ["Venue", "This Wk", "Last Wk", "Last Mth", "Last Yr", "Var vs LW", "Var vs LM", "Var vs LY"],
+  ];
+
+  // Total Row first (Company level)
+  const formatVar = (curr: number, prev: number) => {
+    if (prev === 0) return "0%";
+    return `${(((curr - prev) / prev) * 100).toFixed(1)}%`;
+  };
+
+  rows.push([
+    "Total (Company level)",
+    totals.thisWk,
+    totals.lastWk,
+    totals.lastMth,
+    totals.lastYr,
+    formatVar(totals.thisWk, totals.lastWk),
+    formatVar(totals.thisWk, totals.lastMth),
+    formatVar(totals.thisWk, totals.lastYr),
+  ]);
+
+  // Venue rows
+  trendData.forEach((row) => {
+    rows.push([
+      row.storeName,
+      row.thisWk,
+      row.lastWk,
+      row.lastMth,
+      row.lastYr,
+      formatVar(row.thisWk, row.lastWk),
+      formatVar(row.thisWk, row.lastMth),
+      formatVar(row.thisWk, row.lastYr),
+    ]);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Analysis");
+  
+  XLSX.writeFile(wb, `Consolidated_Cover_Report_${anchorDate}.xlsx`);
+};

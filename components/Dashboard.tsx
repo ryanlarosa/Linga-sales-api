@@ -195,7 +195,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
             />
           )}
           {view === "TRENDS" && (
-            <TrendModule storeList={storeList} theme={theme} />
+            <TrendModule storeList={storeList} theme={theme} anchorDate={toDate} />
           )}
           {view === "SETTINGS" && <SettingsModule currentUser={user} />}
         </div>

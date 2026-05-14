@@ -1,16 +1,18 @@
 import React, { useState, useMemo } from 'react';
 import { Store } from '../../types';
 import { fetchStoreTrendSummary } from '../../services/api';
+import { exportTrendToExcel } from '../../services/excelService';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell
 } from 'recharts';
 import { 
-  TrendingUp, TrendingDown, Users, RefreshCw, ChevronRight, Activity, Calendar
+  TrendingUp, TrendingDown, Users, RefreshCw, ChevronRight, Activity, Calendar, Download
 } from 'lucide-react';
 
 interface TrendModuleProps {
   storeList: Store[];
   theme: 'light' | 'dark';
+  anchorDate: string; // The "To Date" from the global filter
 }
 
 interface StoreTrendData {
@@ -22,13 +24,13 @@ interface StoreTrendData {
   lastYr: number;
 }
 
-const TrendModule: React.FC<TrendModuleProps> = ({ storeList, theme }) => {
+const TrendModule: React.FC<TrendModuleProps> = ({ storeList, theme, anchorDate }) => {
   const [loading, setLoading] = useState(false);
   const [trendData, setTrendData] = useState<StoreTrendData[]>([]);
   const [progress, setProgress] = useState('');
 
-  // Calculate the 4 anchor dates relative to "Today" (or custom anchor)
-  const calculateAnchorDates = (anchor: Date = new Date()) => {
+  // Calculate the 4 anchor dates relative to the selected anchorDate
+  const calculateAnchorDates = (anchor: string) => {
     const today = new Date(anchor);
     
     const lastWk = new Date(today);
@@ -45,7 +47,7 @@ const TrendModule: React.FC<TrendModuleProps> = ({ storeList, theme }) => {
 
   const handleRefreshAll = async () => {
     setLoading(true);
-    const dates = calculateAnchorDates();
+    const dates = calculateAnchorDates(anchorDate);
     const results: StoreTrendData[] = [];
     
     try {
@@ -80,6 +82,19 @@ const TrendModule: React.FC<TrendModuleProps> = ({ storeList, theme }) => {
     }
   };
 
+  const totals = useMemo(() => {
+    return trendData.reduce((acc, curr) => ({
+      thisWk: acc.thisWk + curr.thisWk,
+      lastWk: acc.lastWk + curr.lastWk,
+      lastMth: acc.lastMth + curr.lastMth,
+      lastYr: acc.lastYr + curr.lastYr,
+    }), { thisWk: 0, lastWk: 0, lastMth: 0, lastYr: 0 } as Omit<StoreTrendData, 'storeId' | 'storeName'>);
+  }, [trendData]);
+
+  const handleExport = () => {
+    exportTrendToExcel(trendData, totals, anchorDate);
+  };
+
   const formatVariance = (curr: number, prev: number) => {
     if (prev === 0) return curr > 0 ? '+100%' : '0%';
     const varPct = ((curr - prev) / prev) * 100;
@@ -87,20 +102,11 @@ const TrendModule: React.FC<TrendModuleProps> = ({ storeList, theme }) => {
     return `${sign}${varPct.toFixed(1)}%`;
   };
 
-  const totals = useMemo(() => {
-    return trendData.reduce((acc, curr) => ({
-      thisWk: acc.thisWk + curr.thisWk,
-      lastWk: acc.lastWk + curr.lastWk,
-      lastMth: acc.lastMth + curr.lastMth,
-      lastYr: acc.lastYr + curr.lastYr,
-    }), { thisWk: 0, lastWk: 0, lastMth: 0, lastYr: 0 });
-  }, [trendData]);
-
   const chartData = [
     { name: 'Last Year', covers: totals.lastYr, fill: '#64748b' },
     { name: 'Last Month', covers: totals.lastMth, fill: '#94a3b8' },
     { name: 'Last Week', covers: totals.lastWk, fill: '#cbd5e1' },
-    { name: 'Today', covers: totals.thisWk, fill: '#e11d48' },
+    { name: 'Selected Day', covers: totals.thisWk, fill: '#e11d48' },
   ];
 
   return (
@@ -113,18 +119,29 @@ const TrendModule: React.FC<TrendModuleProps> = ({ storeList, theme }) => {
             Consolidated Cover Tracker
           </h2>
           <p className="text-slate-500 dark:text-slate-400 mt-1 text-sm">
-            Comparing guest trends across all venues for {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
+            Comparing trends anchored to <span className="font-bold text-rose-600">{new Date(anchorDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
           </p>
         </div>
         
-        <button
-          onClick={handleRefreshAll}
-          disabled={loading}
-          className="bg-rose-600 hover:bg-rose-700 text-white px-8 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-lg shadow-rose-600/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed group"
-        >
-          <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`} />
-          {loading ? progress : 'Sync All Stores Now'}
-        </button>
+        <div className="flex gap-4">
+          {trendData.length > 0 && (
+            <button
+              onClick={handleExport}
+              className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-6 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all"
+            >
+              <Download className="w-5 h-5" />
+              Export Tracker
+            </button>
+          )}
+          <button
+            onClick={handleRefreshAll}
+            disabled={loading}
+            className="bg-rose-600 hover:bg-rose-700 text-white px-8 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-lg shadow-rose-600/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed group"
+          >
+            <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`} />
+            {loading ? progress : 'Sync All Stores'}
+          </button>
+        </div>
       </div>
 
       {trendData.length > 0 && (
@@ -176,14 +193,14 @@ const TrendModule: React.FC<TrendModuleProps> = ({ storeList, theme }) => {
                 <thead>
                   <tr className="bg-slate-50 dark:bg-slate-800/50">
                     <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Venue Name</th>
-                    <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">This Week</th>
+                    <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Selected Day</th>
                     <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Last Week</th>
                     <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Last Month</th>
                     <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Last Year</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {trendData.map((row) => (
+                  {trendData.map((row: StoreTrendData) => (
                     <tr key={row.storeId} className="group hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
                       <td className="px-6 py-5">
                         <span className="font-bold dark:text-white group-hover:text-rose-600 transition-colors">{row.storeName}</span>
@@ -240,7 +257,7 @@ const TrendModule: React.FC<TrendModuleProps> = ({ storeList, theme }) => {
            <Calendar className="w-16 h-16 text-slate-300 dark:text-slate-700 mb-6" />
            <h3 className="text-xl font-bold dark:text-white">Ready for Analysis</h3>
            <p className="text-slate-500 dark:text-slate-400 text-sm mt-2 max-w-sm text-center">
-             Click the sync button above to fetch data for all {storeList.length} stores and generate your consolidated trend report.
+             Select a date in the header and click **Sync All Stores** to generate your consolidated tracker for {new Date(anchorDate).toLocaleDateString()}.
            </p>
         </div>
       )}
