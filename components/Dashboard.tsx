@@ -9,7 +9,7 @@ import DashboardHeader from "./Dashboard/DashboardHeader";
 import DashboardFilters from "./Dashboard/DashboardFilters";
 import OverviewModule from "./Dashboard/OverviewModule";
 import ReportsModule from "./Dashboard/ReportsModule";
-import TrendModule from "./Dashboard/TrendModule";
+import TrendModule from "./Dashboard/TrendModule.tsx";
 import SettingsModule from "./Dashboard/SettingsModule";
 
 interface DashboardProps {
