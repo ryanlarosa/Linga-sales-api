@@ -373,9 +373,11 @@ export const fetchStoreTrendSummary = async (
           salesData.sales.forEach((sale: any) => {
             const summary = summaryData?.find((s: any) => s.id === sale.id);
             const netSales = parseApiFloat(summary?.netSales || sale.netSalesStr);
+            const discounts = parseApiFloat(summary?.discounts || 0);
             
-            // User Logic: if Net Sales > 0, count the cover
-            if (netSales > 0) {
+            // Revised Logic: include checks with net sales OR discounts (promos/complimentary)
+            // A true void has 0 net sales AND 0 discounts.
+            if (netSales > 0 || discounts > 0) {
               dailyCovers += sale.guestCount || 0;
               dailyNet += netSales;
             }
