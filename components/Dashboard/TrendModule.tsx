@@ -1,9 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Store } from '../../types';
 import { fetchStoreTrendSummary } from '../../services/api';
 import { exportTrendToExcel } from '../../services/excelService';
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
 } from 'recharts';
 import { 
   TrendingUp, TrendingDown, Users, RefreshCw, ChevronRight, Activity, Calendar, Download
@@ -12,7 +12,7 @@ import {
 interface TrendModuleProps {
   storeList: Store[];
   theme: 'light' | 'dark';
-  anchorDate: string; // The "To Date" from the global filter
+  anchorDate?: string; // Optional default anchor date from global filter
 }
 
 interface StoreTrendData {
@@ -28,8 +28,53 @@ const TrendModule: React.FC<TrendModuleProps> = ({ storeList, theme, anchorDate 
   const [loading, setLoading] = useState(false);
   const [trendData, setTrendData] = useState<StoreTrendData[]>([]);
   const [progress, setProgress] = useState('');
+  
+  // Local Date selector initialized to default anchorDate or today
+  const [selectedDate, setSelectedDate] = useState<string>(() => {
+    if (anchorDate) return anchorDate;
+    return new Date().toISOString().split('T')[0];
+  });
 
-  // Calculate the 4 anchor dates relative to the selected anchorDate
+  // Local storage persisted store selection checklist
+  const [selectedStoreIds, setSelectedStoreIds] = useState<string[]>([]);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Load selection checklist from localStorage
+  useEffect(() => {
+    if (storeList.length > 0) {
+      const saved = localStorage.getItem('linga_cover_tracker_selected_stores');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const validIds = parsed.filter(id => storeList.some(s => s.id === id));
+            if (validIds.length > 0) {
+              setSelectedStoreIds(validIds);
+              return;
+            }
+          }
+        } catch (e) {
+          console.error('Error loading stored venues', e);
+        }
+      }
+      // Default: check all stores
+      setSelectedStoreIds(storeList.map(s => s.id));
+    }
+  }, [storeList]);
+
+  // Click outside listener for dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Calculate the 4 anchor dates relative to the selectedDate
   // Using 364 days (52 weeks) and 28 days (4 weeks) to ensure we compare the same day of the week
   const calculateAnchorDates = (anchor: string) => {
     const today = new Date(anchor);
@@ -46,19 +91,24 @@ const TrendModule: React.FC<TrendModuleProps> = ({ storeList, theme, anchorDate 
     return [today, lastWk, lastMth, lastYr];
   };
 
+  const anchorDates = useMemo(() => calculateAnchorDates(selectedDate), [selectedDate]);
+
   const handleRefreshAll = async () => {
+    if (selectedStoreIds.length === 0) return;
     setLoading(true);
-    const dates = calculateAnchorDates(anchorDate);
+    const dates = anchorDates;
     const results: StoreTrendData[] = [];
     
+    // Only iterate selected stores
+    const activeStores = storeList.filter(s => selectedStoreIds.includes(s.id));
+    
     try {
-      for (let i = 0; i < storeList.length; i++) {
-        const store = storeList[i];
-        setProgress(`Syncing ${store.name} (${i + 1}/${storeList.length})...`);
+      for (let i = 0; i < activeStores.length; i++) {
+        const store = activeStores[i];
+        setProgress(`Syncing ${store.name} (${i + 1}/${activeStores.length})...`);
         
         const summary = await fetchStoreTrendSummary(store.id, dates);
         
-        // Map DD-MON-YYYY keys back to our 4 categories
         const formatDate = (d: Date) => {
           const day = String(d.getDate()).padStart(2, '0');
           const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
@@ -93,7 +143,7 @@ const TrendModule: React.FC<TrendModuleProps> = ({ storeList, theme, anchorDate 
   }, [trendData]);
 
   const handleExport = () => {
-    exportTrendToExcel(trendData, totals, anchorDate, anchorDates);
+    exportTrendToExcel(trendData, totals, selectedDate, anchorDates);
   };
 
   const formatVariance = (curr: number, prev: number) => {
@@ -110,7 +160,6 @@ const TrendModule: React.FC<TrendModuleProps> = ({ storeList, theme, anchorDate 
     { name: 'Selected Day', covers: totals.thisWk, fill: '#e11d48' },
   ];
 
-  const anchorDates = useMemo(() => calculateAnchorDates(anchorDate), [anchorDate]);
   const formatDateTiny = (d: Date) => {
     return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getFullYear()).slice(-2)}`;
   };
@@ -118,15 +167,119 @@ const TrendModule: React.FC<TrendModuleProps> = ({ storeList, theme, anchorDate 
   return (
     <div className="px-8 space-y-8 max-w-[1600px] mx-auto animate-fadeIn transition-all">
       {/* Header Section */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800">
-        <div>
-          <h2 className="text-2xl font-bold dark:text-white flex items-center gap-3">
-            <Activity className="text-rose-600" />
-            Consolidated Cover Tracker
-          </h2>
-          <p className="text-slate-500 dark:text-slate-400 mt-1 text-sm">
-            Comparing trends anchored to <span className="font-bold text-rose-600">{new Date(anchorDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
-          </p>
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800">
+        <div className="space-y-4 xl:space-y-0 xl:flex xl:items-center xl:gap-8 flex-1">
+          <div>
+            <h2 className="text-2xl font-bold dark:text-white flex items-center gap-3">
+              <Activity className="text-rose-600" />
+              Consolidated Cover Tracker
+            </h2>
+            <p className="text-slate-500 dark:text-slate-400 mt-1 text-sm">
+              Comparing trends anchored to <span className="font-bold text-rose-600">{new Date(selectedDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-4 pt-2 xl:pt-0">
+            {/* Custom Date Input */}
+            <div className="flex flex-col gap-1">
+              <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Report Date</span>
+              <div className="relative">
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => {
+                    setSelectedDate(e.target.value);
+                    setTrendData([]); // Reset current synced state to prompt fresh sync
+                  }}
+                  className="h-12 pl-10 pr-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-black uppercase tracking-wider outline-none focus:ring-2 ring-rose-500/20 transition-all dark:text-white cursor-pointer"
+                />
+                <Calendar className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-4 top-1/2 -translate-y-1/2" />
+              </div>
+            </div>
+
+            {/* Custom Multi-Store Selector */}
+            <div className="flex flex-col gap-1 relative" ref={dropdownRef}>
+              <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Filter Venues</span>
+              <button
+                type="button"
+                onClick={() => setDropdownOpen(!dropdownOpen)}
+                className="h-12 px-5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold outline-none focus:ring-2 ring-rose-500/20 transition-all flex items-center justify-between gap-4 dark:text-white min-w-[220px]"
+              >
+                <span>
+                  {selectedStoreIds.length === 0
+                    ? "No Venues Selected"
+                    : selectedStoreIds.length === storeList.length
+                    ? "All Venues Selected"
+                    : `${selectedStoreIds.length} of ${storeList.length} Selected`}
+                </span>
+                <ChevronRight className={`w-4 h-4 text-slate-400 dark:text-slate-500 transition-transform ${dropdownOpen ? 'rotate-90' : ''}`} />
+              </button>
+
+              {dropdownOpen && (
+                <div className="absolute top-[62px] left-0 z-50 w-72 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl p-4 space-y-3 animate-fadeIn">
+                  {/* Select Actions */}
+                  <div className="flex gap-2 justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const allIds = storeList.map(s => s.id);
+                        setSelectedStoreIds(allIds);
+                        localStorage.setItem('linga_cover_tracker_selected_stores', JSON.stringify(allIds));
+                        setTrendData([]);
+                      }}
+                      className="text-[10px] font-black uppercase tracking-wider text-rose-600 hover:text-rose-700 transition-colors"
+                    >
+                      Select All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedStoreIds([]);
+                        localStorage.setItem('linga_cover_tracker_selected_stores', JSON.stringify([]));
+                        setTrendData([]);
+                      }}
+                      className="text-[10px] font-black uppercase tracking-wider text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                    >
+                      Clear All
+                    </button>
+                  </div>
+
+                  {/* Checklist wrapper */}
+                  <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin">
+                    {storeList.map(store => {
+                      const isChecked = selectedStoreIds.includes(store.id);
+                      return (
+                        <label
+                          key={store.id}
+                          className="flex items-center gap-3 px-2 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/40 rounded-xl cursor-pointer transition-colors"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => {
+                              let updated: string[];
+                              if (isChecked) {
+                                updated = selectedStoreIds.filter(id => id !== store.id);
+                              } else {
+                                updated = [...selectedStoreIds, store.id];
+                              }
+                              setSelectedStoreIds(updated);
+                              localStorage.setItem('linga_cover_tracker_selected_stores', JSON.stringify(updated));
+                              setTrendData([]);
+                            }}
+                            className="w-4 h-4 rounded border-slate-300 dark:border-slate-700 text-rose-600 focus:ring-rose-500 cursor-pointer accent-rose-600"
+                          />
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate">
+                            {store.name}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
         
         <div className="flex gap-4">
@@ -141,11 +294,11 @@ const TrendModule: React.FC<TrendModuleProps> = ({ storeList, theme, anchorDate 
           )}
           <button
             onClick={handleRefreshAll}
-            disabled={loading}
+            disabled={loading || selectedStoreIds.length === 0}
             className="bg-rose-600 hover:bg-rose-700 text-white px-8 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-lg shadow-rose-600/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed group"
           >
             <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`} />
-            {loading ? progress : 'Sync All Stores'}
+            {loading ? progress : 'Sync Selected'}
           </button>
         </div>
       </div>
@@ -283,7 +436,7 @@ const TrendModule: React.FC<TrendModuleProps> = ({ storeList, theme, anchorDate 
            <Calendar className="w-16 h-16 text-slate-300 dark:text-slate-700 mb-6" />
            <h3 className="text-xl font-bold dark:text-white">Ready for Analysis</h3>
            <p className="text-slate-500 dark:text-slate-400 text-sm mt-2 max-w-sm text-center">
-             Select a date in the header and click **Sync All Stores** to generate your consolidated tracker for {new Date(anchorDate).toLocaleDateString()}.
+             Select a date and click **Sync Selected** to generate your consolidated tracker for {new Date(selectedDate.replace(/-/g, '\/')).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}.
            </p>
         </div>
       )}
@@ -294,7 +447,7 @@ const TrendModule: React.FC<TrendModuleProps> = ({ storeList, theme, anchorDate 
               <div className="w-20 h-20 border-4 border-rose-100 dark:border-rose-900/20 rounded-full"></div>
               <div className="w-20 h-20 border-4 border-rose-600 border-t-transparent rounded-full animate-spin absolute top-0 left-0"></div>
            </div>
-           <p className="mt-8 text-rose-600 font-black uppercase tracking-widest animate-pulse">{progress}</p>
+           <p className="mt-8 text-rose-600 font-black uppercase tracking-widest animate-pulse text-sm font-bold text-center px-4 max-w-md">{progress}</p>
         </div>
       )}
     </div>
