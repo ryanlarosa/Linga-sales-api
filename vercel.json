@@ -15,5 +15,11 @@
       "maxDuration": 60,
       "memory": 1024
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/v1/cron/daily-cover-tracker",
+      "schedule": "0 * * * *"
+    }
+  ]
 }

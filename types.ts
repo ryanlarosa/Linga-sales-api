@@ -112,3 +112,8 @@ export interface FetchedData {
   paymentSummary?: PaymentSummaryItem[];
   isSimulated?: boolean;
 }
+
+export interface AutomationSettings {
+  enabled: boolean;
+  fetchTime: string; // e.g. "08:00"
+}

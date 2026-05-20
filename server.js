@@ -165,6 +165,24 @@ async function getActiveStores() {
   }
 }
 
+async function getAutomationSettingsBackend() {
+  try {
+    const { initializeApp } = await import('firebase/app');
+    const { getFirestore, doc, getDoc } = await import('firebase/firestore');
+    const firebaseApp = initializeApp(firebaseConfig);
+    const db = getFirestore(firebaseApp);
+    const docRef = doc(db, 'configs', 'cover_tracker_automation');
+    const snapshot = await getDoc(docRef);
+    if (snapshot.exists()) {
+      return snapshot.data();
+    }
+    return { enabled: true, fetchTime: "08:00" };
+  } catch (err) {
+    console.error("Failed to fetch automation settings from Firestore, using default:", err);
+    return { enabled: true, fetchTime: "08:00" };
+  }
+}
+
 async function fetchStoreTrendSummaryBackend(storeId, dates) {
   const results = {};
 
@@ -584,7 +602,34 @@ app.get('/api/v1/cron/daily-cover-tracker', async (req, res) => {
     }
 
     try {
-        // 2. Resolve anchor date (yesterday)
+        // 2. Fetch automation settings
+        const settings = await getAutomationSettingsBackend();
+
+        // 3. Check enabled/disabled state
+        if (!settings.enabled) {
+            console.log("[Cron] Daily automation is disabled in settings.");
+            return res.json({ success: true, message: "Daily automation is disabled in settings." });
+        }
+
+        // 4. Check hour match (Dubai Time GST / UTC+4)
+        const isForced = req.query.force === 'true';
+        if (!isForced) {
+            const targetHour = parseInt(settings.fetchTime.split(':')[0], 10);
+            const dubaiTimeStr = new Date().toLocaleString("en-US", { timeZone: "Asia/Dubai" });
+            const dubaiHour = new Date(dubaiTimeStr).getHours();
+
+            if (dubaiHour !== targetHour) {
+                console.log(`[Cron] Skipping: Dubai hour is ${dubaiHour}, configured hour is ${targetHour}.`);
+                return res.json({
+                    success: true,
+                    message: `Skipped: current Dubai hour (${dubaiHour}) does not match configured automation hour (${targetHour}).`
+                });
+            }
+        }
+
+        console.log("[Cron] Running scheduled Daily Cover Report generation...");
+
+        // 5. Resolve anchor date (yesterday)
         const today = new Date();
         today.setDate(today.getDate() - 1);
         const selectedDate = today.toISOString().split('T')[0];

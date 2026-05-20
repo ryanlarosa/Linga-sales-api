@@ -1,6 +1,6 @@
 import { db } from "./firebase";
-import { collection, getDocs, query, where, doc, setDoc, deleteDoc, updateDoc, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
-import { User, Store } from "../types";
+import { collection, getDocs, query, where, doc, setDoc, deleteDoc, updateDoc, QueryDocumentSnapshot, DocumentData, getDoc } from "firebase/firestore";
+import { User, Store, AutomationSettings } from "../types";
 import { MOCK_USERS, STORE_LIST } from "../constants";
 
 // Helper to check if error is due to missing DB setup in Console
@@ -197,5 +197,33 @@ export const getStores = async (): Promise<Store[]> => {
         console.error("Error fetching stores:", error);
     }
     return STORE_LIST; 
+  }
+};
+
+export const getAutomationSettings = async (): Promise<AutomationSettings> => {
+  try {
+    const docRef = doc(db, "configs", "cover_tracker_automation");
+    const snapshot = await getDoc(docRef);
+    if (snapshot.exists()) {
+      return snapshot.data() as AutomationSettings;
+    }
+    return { enabled: true, fetchTime: "08:00" };
+  } catch (error) {
+    if (isMissingDbError(error)) {
+        console.warn("Firestore not configured. Using default automation settings.");
+    } else {
+        console.error("Error getting automation settings:", error);
+    }
+    return { enabled: true, fetchTime: "08:00" };
+  }
+};
+
+export const updateAutomationSettings = async (settings: AutomationSettings): Promise<void> => {
+  try {
+    const docRef = doc(db, "configs", "cover_tracker_automation");
+    await setDoc(docRef, settings, { merge: true });
+  } catch (error) {
+    console.error("Error updating automation settings:", error);
+    throw error;
   }
 };

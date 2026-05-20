@@ -8,6 +8,8 @@ import {
   deleteUser,
   deleteStore,
   updateUser,
+  getAutomationSettings,
+  updateAutomationSettings,
 } from "../../services/firestoreService";
 
 interface SettingsModuleProps {
@@ -15,11 +17,14 @@ interface SettingsModuleProps {
 }
 
 const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
-  const [tab, setTab] = useState<"STORES" | "USERS">("STORES");
+  const [tab, setTab] = useState<"STORES" | "USERS" | "AUTOMATION">("STORES");
   const [stores, setStores] = useState<Store[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
+  
+  // Automation settings state
+  const [autoSettings, setAutoSettings] = useState({ enabled: true, fetchTime: "08:00" });
 
   // Store Form State
   const [newStore, setNewStore] = useState({ id: "", name: "" });
@@ -40,9 +45,14 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [s, u] = await Promise.all([getStores(), getUsers()]);
+      const [s, u, auto] = await Promise.all([
+        getStores(),
+        getUsers(),
+        getAutomationSettings()
+      ]);
       setStores(s || []);
       setUsers(u || []);
+      setAutoSettings(auto || { enabled: true, fetchTime: "08:00" });
     } catch (err) {
       console.error("Failed to fetch settings data", err);
     } finally {
@@ -53,6 +63,21 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  const handleAutomationSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      await updateAutomationSettings(autoSettings);
+      setMsg("Automation settings saved successfully");
+      fetchData();
+    } catch (err) {
+      setMsg("Failed to save automation settings");
+    } finally {
+      setLoading(false);
+      setTimeout(() => setMsg(""), 3000);
+    }
+  };
 
   const handleAddStore = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -166,10 +191,22 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
           Store Locations
         </button>
         <button
-          onClick={() => setTab("USERS")}
+          onClick={() => {
+            setTab("USERS");
+            resetUserForm();
+          }}
           className={`px-4 py-2 text-sm font-bold border-b-2 transition-all whitespace-nowrap ${tab === "USERS" ? "border-rose-600 text-rose-600 dark:text-rose-400" : "text-slate-400"}`}
         >
           System Access
+        </button>
+        <button
+          onClick={() => {
+            setTab("AUTOMATION");
+            resetUserForm();
+          }}
+          className={`px-4 py-2 text-sm font-bold border-b-2 transition-all whitespace-nowrap ${tab === "AUTOMATION" ? "border-rose-600 text-rose-600 dark:text-rose-400" : "text-slate-400"}`}
+        >
+          Report Automation
         </button>
       </div>
 
@@ -187,9 +224,9 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
               <span>
                 {tab === "STORES"
                   ? "New Store Location"
-                  : isEditingUser
-                    ? `Modify Account: ${userForm.username}`
-                    : "New User Account"}
+                  : tab === "USERS"
+                    ? (isEditingUser ? `Modify Account: ${userForm.username}` : "New User Account")
+                    : "Configure Automation"}
               </span>
               {tab === "USERS" && isEditingUser && (
                 <button
@@ -213,7 +250,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                       setNewStore({ ...newStore, name: e.target.value })
                     }
                     placeholder="e.g. Common Grounds MOE"
-                    className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20"
+                    className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
                   />
                 </div>
                 <div className="space-y-1">
@@ -226,30 +263,30 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                       setNewStore({ ...newStore, id: e.target.value })
                     }
                     placeholder="Paste ID from Linga Dashboard"
-                    className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-mono dark:text-white focus:ring-2 ring-rose-500/20"
+                    className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-mono dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
                   />
                 </div>
                 <button
                   disabled={loading}
                   type="submit"
-                  className="w-full py-3.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-rose-600/20 transition-all"
+                  className="w-full py-3.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-rose-600/20 transition-all cursor-pointer"
                 >
                   {loading ? "Processing..." : "Register Store"}
                 </button>
               </form>
-            ) : (
+            ) : tab === "USERS" ? (
               <form onSubmit={handleUserSubmit} className="space-y-5">
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
                     Full Display Name
                   </label>
                   <input
-                    value={userForm.name}
+                    value={userForm.name || ""}
                     onChange={(e) =>
                       setUserForm({ ...userForm, name: e.target.value })
                     }
                     placeholder="e.g. Ahmed Manager"
-                    className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20"
+                    className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
                   />
                 </div>
 
@@ -265,7 +302,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                       }
                       disabled={isEditingUser}
                       placeholder="Login ID"
-                      className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 disabled:opacity-50"
+                      className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 disabled:opacity-50 outline-none"
                     />
                   </div>
                   {!isEditingUser && (
@@ -280,7 +317,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                         }
                         type="password"
                         placeholder="••••••••"
-                        className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20"
+                        className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
                       />
                     </div>
                   )}
@@ -343,7 +380,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                 <button
                   disabled={loading}
                   type="submit"
-                  className="w-full py-3.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-rose-600/20 transition-all"
+                  className="w-full py-3.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-rose-600/20 transition-all cursor-pointer"
                 >
                   {loading
                     ? "Processing..."
@@ -352,179 +389,297 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                       : "Register New User"}
                 </button>
               </form>
+            ) : (
+              <form onSubmit={handleAutomationSubmit} className="space-y-6 animate-fadeIn">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-bold text-slate-800 dark:text-slate-200">Daily Automated Email</span>
+                      <span className="text-xs text-slate-400">Enable/disable automatic reports</span>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={autoSettings.enabled}
+                        onChange={(e) => setAutoSettings({ ...autoSettings, enabled: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-slate-200 dark:bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600"></div>
+                    </label>
+                  </div>
+
+                  {autoSettings.enabled && (
+                    <div className="space-y-2 animate-fadeIn">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
+                        Report Distribution Time (Dubai Time / UTC+4)
+                      </label>
+                      <select
+                        value={autoSettings.fetchTime}
+                        onChange={(e) => setAutoSettings({ ...autoSettings, fetchTime: e.target.value })}
+                        className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
+                      >
+                        {Array.from({ length: 24 }).map((_, idx) => {
+                          const hour = String(idx).padStart(2, "0");
+                          const label = idx === 0 
+                            ? "12:00 AM (Midnight)" 
+                            : idx === 12 
+                              ? "12:00 PM (Noon)" 
+                              : idx < 12 
+                                ? `${idx}:00 AM` 
+                                : `${idx - 12}:00 PM`;
+                          return (
+                            <option key={hour} value={`${hour}:00`}>
+                              {label}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  disabled={loading}
+                  type="submit"
+                  className="w-full py-3.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-rose-600/20 transition-all cursor-pointer"
+                >
+                  {loading ? "Processing..." : "Save Automation Settings"}
+                </button>
+              </form>
             )}
           </div>
         </div>
-
-        {/* LIST SIDE */}
+          {/* LIST SIDE */}
         <div className="lg:col-span-7">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm transition-colors h-full flex flex-col">
-            <div className="px-6 py-4 bg-slate-50 dark:bg-slate-950 border-b border-slate-100 dark:border-slate-800">
-              <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em]">
-                Active{" "}
-                {tab === "STORES" ? "Venue Registry" : "Authorized Personnel"}
-              </h3>
+          {tab === "AUTOMATION" ? (
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-6 transition-colors h-full flex flex-col justify-between">
+              <div className="space-y-6">
+                <h3 className="text-xs font-bold uppercase text-slate-400 tracking-wider">
+                  How Report Automation Works
+                </h3>
+                
+                <div className="space-y-5 text-sm text-slate-600 dark:text-slate-400">
+                  <div className="flex gap-4 items-start">
+                    <div className="p-2.5 bg-rose-50 dark:bg-rose-900/20 rounded-xl text-rose-600 dark:text-rose-400 font-bold shrink-0 text-xs">
+                      1
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-800 dark:text-slate-200 text-sm">Yesterday's Date by Default</h4>
+                      <p className="mt-1 text-xs leading-relaxed">The automation queries Linga API for the complete calendar day of <strong>yesterday</strong>. This avoids incomplete metrics or timezone mismatches from today's running sales.</p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4 items-start">
+                    <div className="p-2.5 bg-rose-50 dark:bg-rose-900/20 rounded-xl text-rose-600 dark:text-rose-400 font-bold shrink-0 text-xs">
+                      2
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-800 dark:text-slate-200 text-sm">Automated Schedule & Timing</h4>
+                      <p className="mt-1 text-xs leading-relaxed">If enabled, the script compares the current hour in Dubai (GST / UTC+4) with your configured Hour. At the target hour, the server fetches data from the registered venues, creates the Excel report, uploads it to Google Drive, and sends email notifications.</p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4 items-start">
+                    <div className="p-2.5 bg-rose-50 dark:bg-rose-900/20 rounded-xl text-rose-600 dark:text-rose-400 font-bold shrink-0 text-xs">
+                      3
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-800 dark:text-slate-200 text-sm">Required Environment Configuration</h4>
+                      <p className="mt-1 text-xs leading-relaxed">
+                        The email distribution and file storage services require key variables to be set in your server's environment:
+                      </p>
+                      <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] font-mono bg-slate-50 dark:bg-slate-950 p-3 rounded-xl border border-slate-200 dark:border-slate-800">
+                        <div>
+                          <span className="text-rose-600 dark:text-rose-400 font-bold">GOOGLE_DRIVE_FOLDER_ID</span>
+                          <span className="block text-[10px] text-slate-400">Target Drive directory</span>
+                        </div>
+                        <div>
+                          <span className="text-rose-600 dark:text-rose-400 font-bold">SMTP_HOST & SMTP_PORT</span>
+                          <span className="block text-[10px] text-slate-400">Email server parameters</span>
+                        </div>
+                        <div className="md:col-span-2">
+                          <span className="text-rose-600 dark:text-rose-400 font-bold">GOOGLE_SERVICE_ACCOUNT_KEY</span>
+                          <span className="block text-[10px] text-slate-400">JSON key credentials for Drive write access</span>
+                        </div>
+                        <div className="md:col-span-2">
+                          <span className="text-rose-600 dark:text-rose-400 font-bold">REPORT_RECIPIENTS</span>
+                          <span className="block text-[10px] text-slate-400">Recipient emails (comma-separated)</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="overflow-auto flex-1 custom-scrollbar">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 dark:bg-slate-950 text-slate-400 uppercase text-[10px] font-bold sticky top-0 z-10">
-                  <tr>
-                    <th className="px-6 py-4">
-                      {tab === "STORES" ? "Venue Details" : "Identity & Rights"}
-                    </th>
-                    <th className="px-6 py-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {(tab === "STORES" ? stores : users).map((item: any) => (
-                    <tr
-                      key={item.id || item.username}
-                      className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group"
-                    >
-                      <td className="px-6 py-4">
-                        <div className="flex flex-col">
-                          <p className="font-bold text-slate-800 dark:text-slate-200">
-                            {item.name || item.username}
-                          </p>
-                          {tab === "STORES" ? (
-                            <p className="text-[10px] font-mono text-slate-400">
-                              {item.id}
-                            </p>
-                          ) : (
-                            <div className="flex gap-2 items-center mt-1">
-                              <span
-                                className={`text-[9px] px-1.5 py-0.5 rounded-md font-black uppercase tracking-wider ${
-                                  item.role === "superuser"
-                                    ? "bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400"
-                                    : item.role === "admin"
-                                      ? "bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400"
-                                      : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
-                                }`}
-                              >
-                                {item.role}
-                              </span>
-                              {item.role === "user" && (
-                                <p className="text-[9px] text-slate-400 font-bold uppercase truncate max-w-[150px]">
-                                  {item.allowedStores?.length || 0} Venues
-                                  Assigned
-                                </p>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex flex-wrap items-center gap-3 justify-end">
-                          {tab === "USERS" &&
-                          editingPassword === item.username ? (
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="password"
-                                value={newPassword}
-                                onChange={(e) => setNewPassword(e.target.value)}
-                                placeholder="New Pass"
-                                className="w-24 h-9 px-3 text-xs border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 outline-none focus:ring-2 ring-rose-500/20"
-                              />
-                              <button
-                                onClick={() =>
-                                  handleResetPassword(item.username)
-                                }
-                                className="text-emerald-600 font-black text-[10px] uppercase hover:underline"
-                              >
-                                Apply
-                              </button>
-                              <button
-                                onClick={() => setEditingPassword(null)}
-                                className="text-slate-400 font-black text-[10px] uppercase hover:underline"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          ) : tab === "USERS" ? (
-                            <>
-                              <button
-                                onClick={() => handleEditUser(item)}
-                                className="text-slate-500 hover:text-rose-600 font-black text-[10px] uppercase transition-all flex items-center gap-1"
-                              >
-                                <svg
-                                  className="w-3 h-3"
-                                  fill="none"
-                                  viewBox="0 0 24 24"
-                                  stroke="currentColor"
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M11 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                                  />
-                                </svg>
-                                Edit
-                              </button>
-                              <button
-                                onClick={() =>
-                                  setEditingPassword(item.username)
-                                }
-                                className="text-slate-500 hover:text-rose-600 font-black text-[10px] uppercase transition-all flex items-center gap-1"
-                              >
-                                <svg
-                                  className="w-3 h-3"
-                                  fill="none"
-                                  viewBox="0 0 24 24"
-                                  stroke="currentColor"
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-                                  />
-                                </svg>
-                                Pin
-                              </button>
-                            </>
-                          ) : null}
-                          <button
-                            onClick={() =>
-                              tab === "STORES"
-                                ? handleDeleteStore(item.id)
-                                : handleDeleteUser(item.username)
-                            }
-                            className="text-slate-300 group-hover:text-red-500 font-black text-[10px] uppercase transition-colors"
-                            title="Remove Permanently"
-                          >
-                            <svg
-                              className="w-4 h-4"
-                              fill="none"
-                              viewBox="0 0 24 24"
-                              stroke="currentColor"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                              />
-                            </svg>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {(tab === "STORES" ? stores : users).length === 0 && (
+          ) : (
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm transition-colors h-full flex flex-col">
+              <div className="px-6 py-4 bg-slate-50 dark:bg-slate-950 border-b border-slate-100 dark:border-slate-800">
+                <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em]">
+                  Active{" "}
+                  {tab === "STORES" ? "Venue Registry" : "Authorized Personnel"}
+                </h3>
+              </div>
+              <div className="overflow-auto flex-1 custom-scrollbar">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-50 dark:bg-slate-950 text-slate-400 uppercase text-[10px] font-bold sticky top-0 z-10">
                     <tr>
-                      <td
-                        colSpan={2}
-                        className="px-6 py-12 text-center text-slate-400 italic"
-                      >
-                        Inventory empty. No entries to display.
-                      </td>
+                      <th className="px-6 py-4">
+                        {tab === "STORES" ? "Venue Details" : "Identity & Rights"}
+                      </th>
+                      <th className="px-6 py-4 text-right">Actions</th>
                     </tr>
-                  )}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {(tab === "STORES" ? stores : users).map((item: any) => (
+                      <tr
+                        key={item.id || item.username}
+                        className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group"
+                      >
+                        <td className="px-6 py-4">
+                          <div className="flex flex-col">
+                            <p className="font-bold text-slate-800 dark:text-slate-200">
+                              {item.name || item.username}
+                            </p>
+                            {tab === "STORES" ? (
+                              <p className="text-[10px] font-mono text-slate-400">
+                                {item.id}
+                              </p>
+                            ) : (
+                              <div className="flex gap-2 items-center mt-1">
+                                <span
+                                  className={`text-[9px] px-1.5 py-0.5 rounded-md font-black uppercase tracking-wider ${
+                                    item.role === "superuser"
+                                      ? "bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400"
+                                      : item.role === "admin"
+                                        ? "bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400"
+                                        : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+                                  }`}
+                                >
+                                  {item.role}
+                                </span>
+                                {item.role === "user" && (
+                                  <p className="text-[9px] text-slate-400 font-bold uppercase truncate max-w-[150px]">
+                                    {item.allowedStores?.length || 0} Venues
+                                    Assigned
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <div className="flex flex-wrap items-center gap-3 justify-end">
+                            {tab === "USERS" &&
+                            editingPassword === item.username ? (
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="password"
+                                  value={newPassword}
+                                  onChange={(e) => setNewPassword(e.target.value)}
+                                  placeholder="New Pass"
+                                  className="w-24 h-9 px-3 text-xs border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 outline-none focus:ring-2 ring-rose-500/20"
+                                />
+                                <button
+                                  onClick={() =>
+                                    handleResetPassword(item.username)
+                                  }
+                                  className="text-emerald-600 font-black text-[10px] uppercase hover:underline"
+                                >
+                                  Apply
+                                </button>
+                                <button
+                                  onClick={() => setEditingPassword(null)}
+                                  className="text-slate-400 font-black text-[10px] uppercase hover:underline"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : tab === "USERS" ? (
+                              <>
+                                <button
+                                  onClick={() => handleEditUser(item)}
+                                  className="text-slate-500 hover:text-rose-600 font-black text-[10px] uppercase transition-all flex items-center gap-1"
+                                >
+                                  <svg
+                                    className="w-3 h-3"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M11 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                                    />
+                                  </svg>
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    setEditingPassword(item.username)
+                                  }
+                                  className="text-slate-500 hover:text-rose-600 font-black text-[10px] uppercase transition-all flex items-center gap-1"
+                                >
+                                  <svg
+                                    className="w-3 h-3"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                                    />
+                                  </svg>
+                                  Pin
+                                </button>
+                              </>
+                            ) : null}
+                            <button
+                              onClick={() =>
+                                tab === "STORES"
+                                  ? handleDeleteStore(item.id)
+                                  : handleDeleteUser(item.username)
+                              }
+                              className="text-slate-300 group-hover:text-red-500 font-black text-[10px] uppercase transition-colors"
+                              title="Remove Permanently"
+                            >
+                              <svg
+                                className="w-4 h-4"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                />
+                              </svg>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {(tab === "STORES" ? stores : users).length === 0 && (
+                      <tr>
+                        <td
+                          colSpan={2}
+                          className="px-6 py-12 text-center text-slate-400 italic"
+                        >
+                          Inventory empty. No entries to display.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>
