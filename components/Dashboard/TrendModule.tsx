@@ -6,7 +6,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
 } from 'recharts';
 import { 
-  TrendingUp, TrendingDown, Users, RefreshCw, ChevronRight, Activity, Calendar, Download
+  TrendingUp, TrendingDown, Users, RefreshCw, ChevronRight, ChevronDown, SlidersHorizontal, Activity, Calendar, Download
 } from 'lucide-react';
 
 interface TrendModuleProps {
@@ -28,6 +28,10 @@ const TrendModule: React.FC<TrendModuleProps> = ({ storeList, theme, anchorDate 
   const [loading, setLoading] = useState(false);
   const [trendData, setTrendData] = useState<StoreTrendData[]>([]);
   const [progress, setProgress] = useState('');
+  
+  // Emailling/Drive reports states
+  const [sendingReport, setSendingReport] = useState(false);
+  const [sendResult, setSendResult] = useState<{ success: boolean; message: string } | null>(null);
   
   // Local Date selector initialized to default anchorDate or today
   const [selectedDate, setSelectedDate] = useState<string>(() => {
@@ -96,6 +100,7 @@ const TrendModule: React.FC<TrendModuleProps> = ({ storeList, theme, anchorDate 
   const handleRefreshAll = async () => {
     if (selectedStoreIds.length === 0) return;
     setLoading(true);
+    setSendResult(null); // Clear any old send results when re-syncing
     const dates = anchorDates;
     const results: StoreTrendData[] = [];
     
@@ -146,11 +151,40 @@ const TrendModule: React.FC<TrendModuleProps> = ({ storeList, theme, anchorDate 
     exportTrendToExcel(trendData, totals, selectedDate, anchorDates);
   };
 
+  const handleEmailAndDrive = async () => {
+    if (trendData.length === 0) return;
+    setSendingReport(true);
+    setSendResult(null);
+    try {
+      const response = await fetch('/api/v1/reports/email-cover-tracker', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          selectedDate,
+          selectedStoreIds,
+          trendData,
+          totals
+        })
+      });
+      const resData = await response.json();
+      if (response.ok && resData.success) {
+        setSendResult({ success: true, message: 'Report successfully emailed and saved to Google Drive!' });
+      } else {
+        setSendResult({ success: false, message: resData.error || 'Failed to send report.' });
+      }
+    } catch (err: any) {
+      setSendResult({ success: false, message: err.message || 'Error occurred while sending report.' });
+    } finally {
+      setSendingReport(false);
+    }
+  };
+
   const formatVariance = (curr: number, prev: number) => {
-    if (prev === 0) return curr > 0 ? '+100%' : '0%';
-    const varPct = ((curr - prev) / prev) * 100;
-    const sign = varPct >= 0 ? '+' : '';
-    return `${sign}${varPct.toFixed(1)}%`;
+    const diff = curr - prev;
+    const sign = diff >= 0 ? '+' : '';
+    return `${sign}${diff.toLocaleString()}`;
   };
 
   const chartData = [
@@ -167,140 +201,150 @@ const TrendModule: React.FC<TrendModuleProps> = ({ storeList, theme, anchorDate 
   return (
     <div className="px-8 space-y-8 max-w-[1600px] mx-auto animate-fadeIn transition-all">
       {/* Header Section */}
-      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800">
-        <div className="space-y-4 xl:space-y-0 xl:flex xl:items-center xl:gap-8 flex-1">
-          <div>
-            <h2 className="text-2xl font-bold dark:text-white flex items-center gap-3">
-              <Activity className="text-rose-600" />
-              Consolidated Cover Tracker
-            </h2>
-            <p className="text-slate-500 dark:text-slate-400 mt-1 text-sm">
-              Comparing trends anchored to <span className="font-bold text-rose-600">{new Date(selectedDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
-            </p>
-          </div>
+      <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 space-y-4">
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6">
+          <div className="space-y-4 xl:space-y-0 xl:flex xl:items-center xl:gap-8 flex-1">
+            <div>
+              <h2 className="text-2xl font-bold dark:text-white flex items-center gap-3">
+                <Activity className="text-rose-600" />
+                Consolidated Cover Tracker
+              </h2>
+              <p className="text-slate-500 dark:text-slate-400 mt-1 text-sm">
+                Comparing trends anchored to <span className="font-bold text-rose-600">{new Date(selectedDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
+              </p>
+            </div>
 
-          <div className="flex flex-wrap items-center gap-4 pt-2 xl:pt-0">
-            {/* Custom Date Input */}
-            <div className="flex flex-col gap-1">
-              <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Report Date</span>
-              <div className="relative">
-                <input
-                  type="date"
-                  value={selectedDate}
-                  onChange={(e) => {
-                    setSelectedDate(e.target.value);
-                    setTrendData([]); // Reset current synced state to prompt fresh sync
-                  }}
-                  className="h-12 pl-10 pr-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-black uppercase tracking-wider outline-none focus:ring-2 ring-rose-500/20 transition-all dark:text-white cursor-pointer"
-                />
-                <Calendar className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-4 top-1/2 -translate-y-1/2" />
+            <div className="flex flex-wrap items-center gap-4 pt-2 xl:pt-0">
+              {/* Custom Date Input */}
+              <div className="flex flex-col gap-1">
+                <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Report Date</span>
+                <div className="relative">
+                  <input
+                    type="date"
+                    value={selectedDate}
+                    onChange={(e) => {
+                      setSelectedDate(e.target.value);
+                      setTrendData([]);
+                    }}
+                    className="bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 pl-10 pr-4 py-3 rounded-2xl font-bold text-sm border-0 focus:ring-2 focus:ring-rose-500 focus:bg-white dark:focus:bg-slate-700 cursor-pointer transition-all outline-none"
+                  />
+                  <Calendar className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                </div>
+              </div>
+
+              {/* Stores Multi-Select Checklist */}
+              <div className="flex flex-col gap-1" ref={dropdownRef}>
+                <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Filter Venues</span>
+                <div className="relative">
+                  <button
+                    onClick={() => setDropdownOpen(!dropdownOpen)}
+                    className="bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 pl-10 pr-4 py-3 rounded-2xl font-bold text-sm border-0 focus:ring-2 focus:ring-rose-500 flex items-center justify-between gap-3 min-w-[200px] text-left cursor-pointer transition-all outline-none"
+                  >
+                    <SlidersHorizontal className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <span>{selectedStoreIds.length === storeList.length ? 'All Stores Selected' : `${selectedStoreIds.length} Stores Selected`}</span>
+                    <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {dropdownOpen && (
+                    <div className="absolute left-0 mt-2 w-72 bg-white dark:bg-slate-850 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl z-50 p-4 space-y-3">
+                      <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-800">
+                        <button
+                          onClick={() => {
+                            const allIds = storeList.map(s => s.id);
+                            setSelectedStoreIds(allIds);
+                            localStorage.setItem('linga_cover_tracker_selected_stores', JSON.stringify(allIds));
+                            setTrendData([]);
+                          }}
+                          className="text-[10px] font-black text-rose-600 hover:text-rose-700 transition-colors uppercase tracking-wider"
+                        >
+                          Select All
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedStoreIds([]);
+                            localStorage.setItem('linga_cover_tracker_selected_stores', JSON.stringify([]));
+                            setTrendData([]);
+                          }}
+                          className="text-[10px] font-black text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors uppercase tracking-wider"
+                        >
+                          Clear All
+                        </button>
+                      </div>
+
+                      <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1">
+                        {storeList.map((store) => {
+                          const isChecked = selectedStoreIds.includes(store.id);
+                          return (
+                            <label
+                              key={store.id}
+                              className="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {
+                                  let updated: string[];
+                                  if (isChecked) {
+                                    updated = selectedStoreIds.filter(id => id !== store.id);
+                                  } else {
+                                    updated = [...selectedStoreIds, store.id];
+                                  }
+                                  setSelectedStoreIds(updated);
+                                  localStorage.setItem('linga_cover_tracker_selected_stores', JSON.stringify(updated));
+                                  setTrendData([]);
+                                }}
+                                className="w-4 h-4 rounded border-slate-300 dark:border-slate-700 text-rose-600 focus:ring-rose-500 cursor-pointer accent-rose-600"
+                              />
+                              <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate">
+                                {store.name}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-
-            {/* Custom Multi-Store Selector */}
-            <div className="flex flex-col gap-1 relative" ref={dropdownRef}>
-              <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Filter Venues</span>
-              <button
-                type="button"
-                onClick={() => setDropdownOpen(!dropdownOpen)}
-                className="h-12 px-5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold outline-none focus:ring-2 ring-rose-500/20 transition-all flex items-center justify-between gap-4 dark:text-white min-w-[220px]"
-              >
-                <span>
-                  {selectedStoreIds.length === 0
-                    ? "No Venues Selected"
-                    : selectedStoreIds.length === storeList.length
-                    ? "All Venues Selected"
-                    : `${selectedStoreIds.length} of ${storeList.length} Selected`}
-                </span>
-                <ChevronRight className={`w-4 h-4 text-slate-400 dark:text-slate-500 transition-transform ${dropdownOpen ? 'rotate-90' : ''}`} />
-              </button>
-
-              {dropdownOpen && (
-                <div className="absolute top-[62px] left-0 z-50 w-72 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl p-4 space-y-3 animate-fadeIn">
-                  {/* Select Actions */}
-                  <div className="flex gap-2 justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const allIds = storeList.map(s => s.id);
-                        setSelectedStoreIds(allIds);
-                        localStorage.setItem('linga_cover_tracker_selected_stores', JSON.stringify(allIds));
-                        setTrendData([]);
-                      }}
-                      className="text-[10px] font-black uppercase tracking-wider text-rose-600 hover:text-rose-700 transition-colors"
-                    >
-                      Select All
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedStoreIds([]);
-                        localStorage.setItem('linga_cover_tracker_selected_stores', JSON.stringify([]));
-                        setTrendData([]);
-                      }}
-                      className="text-[10px] font-black uppercase tracking-wider text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
-                    >
-                      Clear All
-                    </button>
-                  </div>
-
-                  {/* Checklist wrapper */}
-                  <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin">
-                    {storeList.map(store => {
-                      const isChecked = selectedStoreIds.includes(store.id);
-                      return (
-                        <label
-                          key={store.id}
-                          className="flex items-center gap-3 px-2 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/40 rounded-xl cursor-pointer transition-colors"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => {
-                              let updated: string[];
-                              if (isChecked) {
-                                updated = selectedStoreIds.filter(id => id !== store.id);
-                              } else {
-                                updated = [...selectedStoreIds, store.id];
-                              }
-                              setSelectedStoreIds(updated);
-                              localStorage.setItem('linga_cover_tracker_selected_stores', JSON.stringify(updated));
-                              setTrendData([]);
-                            }}
-                            className="w-4 h-4 rounded border-slate-300 dark:border-slate-700 text-rose-600 focus:ring-rose-500 cursor-pointer accent-rose-600"
-                          />
-                          <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate">
-                            {store.name}
-                          </span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
+          </div>
+          
+          <div className="flex gap-4">
+            {trendData.length > 0 && (
+              <>
+                <button
+                  onClick={handleEmailAndDrive}
+                  disabled={sendingReport || loading}
+                  className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-800 text-white px-6 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  <RefreshCw className={`w-5 h-5 ${sendingReport ? 'animate-spin' : ''}`} />
+                  {sendingReport ? 'Sending...' : 'Email & Save to Drive'}
+                </button>
+                <button
+                  onClick={handleExport}
+                  className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-6 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all cursor-pointer"
+                >
+                  <Download className="w-5 h-5" />
+                  Export Tracker
+                </button>
+              </>
+            )}
+            <button
+              onClick={handleRefreshAll}
+              disabled={loading || selectedStoreIds.length === 0 || sendingReport}
+              className="bg-rose-600 hover:bg-rose-700 text-white px-8 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-lg shadow-rose-600/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed group cursor-pointer"
+            >
+              <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`} />
+              {loading ? progress : 'Sync Selected'}
+            </button>
           </div>
         </div>
-        
-        <div className="flex gap-4">
-          {trendData.length > 0 && (
-            <button
-              onClick={handleExport}
-              className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-6 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all"
-            >
-              <Download className="w-5 h-5" />
-              Export Tracker
-            </button>
-          )}
-          <button
-            onClick={handleRefreshAll}
-            disabled={loading || selectedStoreIds.length === 0}
-            className="bg-rose-600 hover:bg-rose-700 text-white px-8 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-lg shadow-rose-600/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed group"
-          >
-            <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`} />
-            {loading ? progress : 'Sync Selected'}
-          </button>
-        </div>
+
+        {sendResult && (
+          <div className={`px-6 py-4 rounded-2xl text-xs font-bold border transition-all ${sendResult.success ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-600 dark:text-rose-400'}`}>
+            {sendResult.message}
+          </div>
+        )}
       </div>
 
       {trendData.length > 0 && (

@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import { FetchedData } from "../types";
 
 const parseNum = (val: string | number | undefined | null): number => {
@@ -276,56 +277,212 @@ export const exportAnalysisToExcel = (
   XLSX.writeFile(wb, `${dimension}_Report_${storeName}.xlsx`);
 };
 
-export const exportTrendToExcel = (trendData: any[], totals: any, anchorDate: string, anchorDates: Date[]) => {
+export const exportTrendToExcel = async (trendData: any[], totals: any, anchorDate: string, anchorDates: Date[]) => {
   if (!trendData || trendData.length === 0) return;
+
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Covers Analysis');
+
+  // Ensure grid lines are visible in the spreadsheet
+  worksheet.views = [{ showGridLines: true }];
+
+  // Set column widths
+  worksheet.columns = [
+    { header: 'Venue Name', key: 'venue', width: 32 },
+    { header: 'Selected Day', key: 'thisWk', width: 16 },
+    { header: 'Last Week', key: 'lastWk', width: 16 },
+    { header: 'Last Month', key: 'lastMth', width: 16 },
+    { header: 'Last Year', key: 'lastYr', width: 16 },
+    { header: 'Var LW', key: 'varLw', width: 14 },
+    { header: 'Var LM', key: 'varLm', width: 14 },
+    { header: 'Var LY', key: 'varLy', width: 14 },
+  ];
 
   const formatDate = (d: Date) => {
     return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getFullYear()).slice(-2)}`;
   };
 
-  // Replicate the "Analysis" sheet style from Sample.xlsx
-  const rows = [
-    ["Daily Covers tracker", "", "", "", "", "", "", ""],
-    ["Report Date:", anchorDate, "", "", "", "", "", ""],
-    ["", "", "", "", "", "", "", ""],
-    ["", "This Wk", "Last Wk", "Last Mth", "Last Yr", "Var LW", "Var LM", "Var LY"],
-    ["Venue", formatDate(anchorDates[0]), formatDate(anchorDates[1]), formatDate(anchorDates[2]), formatDate(anchorDates[3]), "", "", ""],
+  // Add titles
+  worksheet.addRow([]);
+  const titleRow = worksheet.addRow(['Daily Covers Tracker']);
+  titleRow.getCell(1).font = { name: 'Arial', size: 16, bold: true, color: { argb: 'FF0F172A' } };
+  
+  const dateRow = worksheet.addRow([`Report Date: ${anchorDate}`]);
+  dateRow.getCell(1).font = { name: 'Arial', size: 11, italic: true, color: { argb: 'FF475569' } };
+  worksheet.addRow([]); // Blank spacer
+
+  // Table Headers
+  const headerRow1 = worksheet.addRow([
+    'Venue Name',
+    'Selected Day',
+    'Last Week',
+    'Last Month',
+    'Last Year',
+    'Var LW',
+    'Var LM',
+    'Var LY'
+  ]);
+  const headerRow2 = worksheet.addRow([
+    '',
+    formatDate(anchorDates[0]),
+    formatDate(anchorDates[1]),
+    formatDate(anchorDates[2]),
+    formatDate(anchorDates[3]),
+    '',
+    '',
+    ''
+  ]);
+
+  // Merge headers vertically
+  worksheet.mergeCells('A5:A6');
+  worksheet.mergeCells('F5:F6');
+  worksheet.mergeCells('G5:G6');
+  worksheet.mergeCells('H5:H6');
+
+  // Center vertical headers and apply styling
+  const headerCells = [
+    'A5', 'B5', 'C5', 'D5', 'E5', 'F5', 'G5', 'H5',
+    'B6', 'C6', 'D6', 'E6'
   ];
 
-  // Total Row first (Company level)
-  const formatVar = (curr: number, prev: number) => {
-    if (prev === 0) return "0%";
-    return `${(((curr - prev) / prev) * 100).toFixed(1)}%`;
-  };
+  headerCells.forEach(cellRef => {
+    const cell = worksheet.getCell(cellRef);
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF1E293B' } // Slate-800
+    };
+    cell.font = {
+      name: 'Arial',
+      size: 10,
+      bold: true,
+      color: { argb: 'FFFFFFFF' }
+    };
+    cell.alignment = {
+      horizontal: 'center',
+      vertical: 'middle',
+      wrapText: true
+    };
+    cell.border = {
+      top: { style: 'thin', color: { argb: 'FF475569' } },
+      bottom: { style: 'thin', color: { argb: 'FF475569' } },
+      left: { style: 'thin', color: { argb: 'FF475569' } },
+      right: { style: 'thin', color: { argb: 'FF475569' } }
+    };
+  });
 
-  rows.push([
-    "Total (Company level)",
+  worksheet.getRow(5).height = 24;
+  worksheet.getRow(6).height = 20;
+
+  // Add Totals (Company level) first, styled beautifully
+  const totalRow = worksheet.addRow([
+    'Company Total',
     totals.thisWk,
     totals.lastWk,
     totals.lastMth,
     totals.lastYr,
-    formatVar(totals.thisWk, totals.lastWk),
-    formatVar(totals.thisWk, totals.lastMth),
-    formatVar(totals.thisWk, totals.lastYr),
+    totals.thisWk - totals.lastWk,
+    totals.thisWk - totals.lastMth,
+    totals.thisWk - totals.lastYr
   ]);
 
-  // Venue rows
+  // Styles for totals row cells
+  for (let col = 1; col <= 8; col++) {
+    const cell = totalRow.getCell(col);
+    cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F172A' } };
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFF1F5F9' } // Slate-100
+    };
+    cell.border = {
+      top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+      bottom: { style: 'double', color: { argb: 'FF0F172A' } }, // Double bottom line for totals
+      left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+      right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+    };
+    if (col > 1) {
+      cell.alignment = { horizontal: 'right', vertical: 'middle' };
+      if (col <= 5) {
+        cell.numFmt = '#,##0';
+      }
+    } else {
+      cell.alignment = { horizontal: 'left', vertical: 'middle' };
+    }
+  }
+
+  // Color code Company Total variance cells
+  for (let col = 6; col <= 8; col++) {
+    const cell = totalRow.getCell(col);
+    const val = cell.value as number;
+    cell.numFmt = '+#,##0;-#,##0;0';
+    if (val > 0) {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD1FAE5' } };
+      cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF065F46' } };
+    } else if (val < 0) {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
+      cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF991B1B' } };
+    }
+  }
+
+  // Add Venue rows
   trendData.forEach((row) => {
-    rows.push([
+    const rowData = [
       row.storeName,
       row.thisWk,
       row.lastWk,
       row.lastMth,
       row.lastYr,
-      formatVar(row.thisWk, row.lastWk),
-      formatVar(row.thisWk, row.lastMth),
-      formatVar(row.thisWk, row.lastYr),
-    ]);
+      row.thisWk - row.lastWk,
+      row.thisWk - row.lastMth,
+      row.thisWk - row.lastYr
+    ];
+    const dataRow = worksheet.addRow(rowData);
+    dataRow.height = 20;
+
+    for (let col = 1; col <= 8; col++) {
+      const cell = dataRow.getCell(col);
+      cell.font = { name: 'Arial', size: 10, color: { argb: 'FF334155' } };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+      };
+
+      if (col > 1) {
+        cell.alignment = { horizontal: 'right', vertical: 'middle' };
+        if (col <= 5) {
+          cell.numFmt = '#,##0';
+        }
+      } else {
+        cell.alignment = { horizontal: 'left', vertical: 'middle' };
+        cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F172A' } };
+      }
+    }
+
+    // Color code individual venue variance cells
+    for (let col = 6; col <= 8; col++) {
+      const cell = dataRow.getCell(col);
+      const val = cell.value as number;
+      cell.numFmt = '+#,##0;-#,##0;0';
+      if (val > 0) {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD1FAE5' } };
+        cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF065F46' } };
+      } else if (val < 0) {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
+        cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF991B1B' } };
+      }
+    }
   });
 
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Analysis");
-  
-  XLSX.writeFile(wb, `Consolidated_Cover_Report_${anchorDate}.xlsx`);
+  // Write and download
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = window.URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `Consolidated_Cover_Report_${anchorDate}.xlsx`;
+  anchor.click();
+  window.URL.revokeObjectURL(url);
 };
