@@ -476,6 +476,61 @@ export const exportTrendToExcel = async (trendData: any[], totals: any, anchorDa
     }
   });
 
+  // Add second sheet for raw sales data
+  const dataSheet = workbook.addWorksheet('SalesData');
+  dataSheet.views = [{ showGridLines: true }];
+
+  dataSheet.columns = [
+    { header: 'Store', key: 'store', width: 25 },
+    { header: 'Ticket No', key: 'ticket', width: 14 },
+    { header: 'Customer Name', key: 'customer', width: 20 },
+    { header: 'Open Time', key: 'openTime', width: 22 },
+    { header: 'Floor', key: 'floor', width: 12 },
+    { header: 'Table', key: 'table', width: 10 },
+    { header: 'Net Sales', key: 'netSales', width: 14 },
+    { header: 'Total Tax', key: 'tax', width: 12 },
+    { header: 'Discount', key: 'discount', width: 12 },
+    { header: 'Gross Receipt', key: 'gross', width: 14 },
+    { header: 'Guest Count', key: 'guests', width: 12 },
+    { header: 'Date', key: 'date', width: 14 }
+  ];
+
+  const dataHeaderCells = ['A1', 'B1', 'C1', 'D1', 'E1', 'F1', 'G1', 'H1', 'I1', 'J1', 'K1', 'L1'];
+  dataHeaderCells.forEach(cellRef => {
+    const cell = dataSheet.getCell(cellRef);
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+    cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+  });
+
+  trendData.forEach(storeRow => {
+    const rawSales = storeRow.salesData || [];
+    rawSales.forEach((sale: any) => {
+      const saleRow = dataSheet.addRow([
+        storeRow.storeName,
+        sale.ticketNo,
+        sale.customerName || 'Walk-in Guest',
+        sale.saleOpenTime,
+        sale.floorNo,
+        sale.tableNo,
+        sale.netSalesVal,
+        sale.taxVal,
+        sale.discountVal,
+        parseNum(sale.grossReceiptStr),
+        sale.guestCount,
+        anchorDate
+      ]);
+
+      for (let col = 7; col <= 10; col++) {
+        const cell = saleRow.getCell(col);
+        cell.numFmt = '"AED" #,##0.00';
+        cell.alignment = { horizontal: 'right' };
+      }
+      saleRow.getCell(11).numFmt = '#,##0';
+      saleRow.getCell(11).alignment = { horizontal: 'right' };
+    });
+  });
+
   // Write and download
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -669,6 +724,61 @@ export const exportSalesTrendToExcel = async (trendData: any[], totals: any, anc
         cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF991B1B' } };
       }
     }
+  });
+
+  // Add second sheet for raw sales data
+  const dataSheet = workbook.addWorksheet('SalesData');
+  dataSheet.views = [{ showGridLines: true }];
+
+  dataSheet.columns = [
+    { header: 'Store', key: 'store', width: 25 },
+    { header: 'Ticket No', key: 'ticket', width: 14 },
+    { header: 'Customer Name', key: 'customer', width: 20 },
+    { header: 'Open Time', key: 'openTime', width: 22 },
+    { header: 'Floor', key: 'floor', width: 12 },
+    { header: 'Table', key: 'table', width: 10 },
+    { header: 'Net Sales', key: 'netSales', width: 14 },
+    { header: 'Total Tax', key: 'tax', width: 12 },
+    { header: 'Discount', key: 'discount', width: 12 },
+    { header: 'Gross Receipt', key: 'gross', width: 14 },
+    { header: 'Guest Count', key: 'guests', width: 12 },
+    { header: 'Date', key: 'date', width: 14 }
+  ];
+
+  const dataHeaderCells = ['A1', 'B1', 'C1', 'D1', 'E1', 'F1', 'G1', 'H1', 'I1', 'J1', 'K1', 'L1'];
+  dataHeaderCells.forEach(cellRef => {
+    const cell = dataSheet.getCell(cellRef);
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+    cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+  });
+
+  trendData.forEach(storeRow => {
+    const rawSales = storeRow.salesData || [];
+    rawSales.forEach((sale: any) => {
+      const saleRow = dataSheet.addRow([
+        storeRow.storeName,
+        sale.ticketNo,
+        sale.customerName || 'Walk-in Guest',
+        sale.saleOpenTime,
+        sale.floorNo,
+        sale.tableNo,
+        sale.netSalesVal,
+        sale.taxVal,
+        sale.discountVal,
+        parseNum(sale.grossReceiptStr),
+        sale.guestCount,
+        anchorDate
+      ]);
+
+      for (let col = 7; col <= 10; col++) {
+        const cell = saleRow.getCell(col);
+        cell.numFmt = '"AED" #,##0.00';
+        cell.alignment = { horizontal: 'right' };
+      }
+      saleRow.getCell(11).numFmt = '#,##0';
+      saleRow.getCell(11).alignment = { horizontal: 'right' };
+    });
   });
 
   const buffer = await workbook.xlsx.writeBuffer();

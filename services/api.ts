@@ -349,8 +349,8 @@ export const fetchDashboardData = async (
 export const fetchStoreTrendSummary = async (
   storeId: string,
   dates: Date[]
-): Promise<Record<string, { covers: number; netSales: number }>> => {
-  const results: Record<string, { covers: number; netSales: number }> = {};
+): Promise<Record<string, { covers: number; netSales: number; sales?: any[] }>> => {
+  const results: Record<string, { covers: number; netSales: number; sales?: any[] }> = {};
 
   // Fetch in parallel for all dates
   await Promise.all(
@@ -367,6 +367,7 @@ export const fetchStoreTrendSummary = async (
 
         let dailyCovers = 0;
         let dailyNet = 0;
+        const dailySalesList: any[] = [];
 
         // Apply logic from excelService.ts: only count if netSales > 0
         if (salesData?.sales) {
@@ -380,14 +381,22 @@ export const fetchStoreTrendSummary = async (
             if (netSales > 0 || discounts > 0) {
               dailyCovers += sale.guestCount || 0;
               dailyNet += netSales;
+              dailySalesList.push({
+                ...sale,
+                netSalesVal: netSales,
+                discountVal: discounts,
+                taxVal: parseApiFloat(summary?.totalTaxAmount || sale.totalTaxAmountStr),
+                floorNo: summary?.floorNo || 'Unknown',
+                tableNo: summary?.tableNo || 'Unknown'
+              });
             }
           });
         }
 
-        results[dateKey] = { covers: dailyCovers, netSales: dailyNet };
+        results[dateKey] = { covers: dailyCovers, netSales: dailyNet, sales: dailySalesList };
       } catch (e) {
         console.error(`Trend fetch failed for ${formatted}`, e);
-        results[dateKey] = { covers: 0, netSales: 0 };
+        results[dateKey] = { covers: 0, netSales: 0, sales: [] };
       }
     })
   );

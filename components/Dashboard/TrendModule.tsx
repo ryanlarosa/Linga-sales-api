@@ -22,6 +22,7 @@ interface StoreTrendData {
   lastWk: number;
   lastMth: number;
   lastYr: number;
+  salesData?: any[];
 }
 
 const TrendModule: React.FC<TrendModuleProps> = ({ storeList, theme, anchorDate }) => {
@@ -127,6 +128,7 @@ const TrendModule: React.FC<TrendModuleProps> = ({ storeList, theme, anchorDate 
           lastWk: summary[formatDate(dates[1])]?.covers || 0,
           lastMth: summary[formatDate(dates[2])]?.covers || 0,
           lastYr: summary[formatDate(dates[3])]?.covers || 0,
+          salesData: summary[formatDate(dates[0])]?.sales || [],
         });
       }
       setTrendData(results);
