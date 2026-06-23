@@ -54,6 +54,13 @@ const Sidebar: React.FC<SidebarProps> = ({ user, view, setView, onLogout }) => {
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
           <span className="font-medium text-sm">Cover Tracker</span>
         </button>
+        <button 
+          onClick={() => setView('SALES_TRENDS')} 
+          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${view === 'SALES_TRENDS' ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/20' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          <span className="font-medium text-sm">Sales Tracker</span>
+        </button>
         {user.role === 'superuser' && (
           <>
             <div className="pt-4 pb-2 px-3 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Management</div>

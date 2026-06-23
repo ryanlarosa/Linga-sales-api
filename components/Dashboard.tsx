@@ -10,6 +10,7 @@ import DashboardFilters from "./Dashboard/DashboardFilters";
 import OverviewModule from "./Dashboard/OverviewModule";
 import ReportsModule from "./Dashboard/ReportsModule";
 import TrendModule from "./Dashboard/TrendModule.tsx";
+import SalesTrendModule from "./Dashboard/SalesTrendModule";
 import SettingsModule from "./Dashboard/SettingsModule";
 
 interface DashboardProps {
@@ -17,7 +18,7 @@ interface DashboardProps {
   onLogout: () => void;
 }
 
-type ViewMode = "OVERVIEW" | "REPORTS" | "TRENDS" | "SETTINGS";
+type ViewMode = "OVERVIEW" | "REPORTS" | "TRENDS" | "SALES_TRENDS" | "SETTINGS";
 
 const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [view, setView] = useState<ViewMode>("OVERVIEW");
@@ -124,7 +125,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       ? "Analytics Overview"
       : view === "REPORTS"
         ? "Reports & Recap"
-        : "System Configuration";
+        : view === "TRENDS"
+          ? "Consolidated Cover Tracker"
+          : view === "SALES_TRENDS"
+            ? "Consolidated Sales Tracker"
+            : "System Configuration";
 
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-slate-950 font-sans text-slate-900 dark:text-slate-100 overflow-hidden transition-colors duration-300">
@@ -196,6 +201,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
           )}
           {view === "TRENDS" && (
             <TrendModule storeList={storeList} theme={theme} anchorDate={toDate} />
+          )}
+          {view === "SALES_TRENDS" && (
+            <SalesTrendModule storeList={storeList} theme={theme} anchorDate={toDate} />
           )}
           {view === "SETTINGS" && <SettingsModule currentUser={user} />}
         </div>

@@ -486,3 +486,198 @@ export const exportTrendToExcel = async (trendData: any[], totals: any, anchorDa
   anchor.click();
   window.URL.revokeObjectURL(url);
 };
+
+export const exportSalesTrendToExcel = async (trendData: any[], totals: any, anchorDate: string, anchorDates: Date[]) => {
+  if (!trendData || trendData.length === 0) return;
+
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Sales Analysis');
+
+  worksheet.views = [{ showGridLines: true }];
+
+  worksheet.columns = [
+    { header: 'Venue Name', key: 'venue', width: 32 },
+    { header: 'Selected Day', key: 'thisWk', width: 18 },
+    { header: 'Last Week', key: 'lastWk', width: 18 },
+    { header: 'Last Month', key: 'lastMth', width: 18 },
+    { header: 'Last Year', key: 'lastYr', width: 18 },
+    { header: 'Var LW', key: 'varLw', width: 16 },
+    { header: 'Var LM', key: 'varLm', width: 16 },
+    { header: 'Var LY', key: 'varLy', width: 16 },
+  ];
+
+  const formatDate = (d: Date) => {
+    return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getFullYear()).slice(-2)}`;
+  };
+
+  worksheet.addRow([]);
+  const titleRow = worksheet.addRow(['Daily Sales Tracker']);
+  titleRow.getCell(1).font = { name: 'Arial', size: 16, bold: true, color: { argb: 'FF0F172A' } };
+  
+  const dateRow = worksheet.addRow([`Report Date: ${anchorDate}`]);
+  dateRow.getCell(1).font = { name: 'Arial', size: 11, italic: true, color: { argb: 'FF475569' } };
+  worksheet.addRow([]);
+
+  const headerRow1 = worksheet.addRow([
+    'Venue Name',
+    'Selected Day',
+    'Last Week',
+    'Last Month',
+    'Last Year',
+    'Var LW',
+    'Var LM',
+    'Var LY'
+  ]);
+  const headerRow2 = worksheet.addRow([
+    '',
+    formatDate(anchorDates[0]),
+    formatDate(anchorDates[1]),
+    formatDate(anchorDates[2]),
+    formatDate(anchorDates[3]),
+    '',
+    '',
+    ''
+  ]);
+
+  worksheet.mergeCells('A5:A6');
+  worksheet.mergeCells('F5:F6');
+  worksheet.mergeCells('G5:G6');
+  worksheet.mergeCells('H5:H6');
+
+  const headerCells = [
+    'A5', 'B5', 'C5', 'D5', 'E5', 'F5', 'G5', 'H5',
+    'B6', 'C6', 'D6', 'E6'
+  ];
+
+  headerCells.forEach(cellRef => {
+    const cell = worksheet.getCell(cellRef);
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF1E293B' }
+    };
+    cell.font = {
+      name: 'Arial',
+      size: 10,
+      bold: true,
+      color: { argb: 'FFFFFFFF' }
+    };
+    cell.alignment = {
+      horizontal: 'center',
+      vertical: 'middle',
+      wrapText: true
+    };
+    cell.border = {
+      top: { style: 'thin', color: { argb: 'FF475569' } },
+      bottom: { style: 'thin', color: { argb: 'FF475569' } },
+      left: { style: 'thin', color: { argb: 'FF475569' } },
+      right: { style: 'thin', color: { argb: 'FF475569' } }
+    };
+  });
+
+  worksheet.getRow(5).height = 24;
+  worksheet.getRow(6).height = 20;
+
+  const totalRow = worksheet.addRow([
+    'Company Total',
+    totals.thisWk,
+    totals.lastWk,
+    totals.lastMth,
+    totals.lastYr,
+    totals.thisWk - totals.lastWk,
+    totals.thisWk - totals.lastMth,
+    totals.thisWk - totals.lastYr
+  ]);
+
+  for (let col = 1; col <= 8; col++) {
+    const cell = totalRow.getCell(col);
+    cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F172A' } };
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFF1F5F9' }
+    };
+    cell.border = {
+      top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+      bottom: { style: 'double', color: { argb: 'FF0F172A' } },
+      left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+      right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+    };
+    if (col > 1) {
+      cell.alignment = { horizontal: 'right', vertical: 'middle' };
+      cell.numFmt = '"AED" #,##0.00';
+    } else {
+      cell.alignment = { horizontal: 'left', vertical: 'middle' };
+    }
+  }
+
+  for (let col = 6; col <= 8; col++) {
+    const cell = totalRow.getCell(col);
+    const val = cell.value as number;
+    cell.numFmt = '+"AED" #,##0.00;-"AED" #,##0.00;"AED" 0.00';
+    if (val > 0) {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD1FAE5' } };
+      cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF065F46' } };
+    } else if (val < 0) {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
+      cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF991B1B' } };
+    }
+  }
+
+  trendData.forEach((row) => {
+    const rowData = [
+      row.storeName,
+      row.thisWk,
+      row.lastWk,
+      row.lastMth,
+      row.lastYr,
+      row.thisWk - row.lastWk,
+      row.thisWk - row.lastMth,
+      row.thisWk - row.lastYr
+    ];
+    const dataRow = worksheet.addRow(rowData);
+    dataRow.height = 20;
+
+    for (let col = 1; col <= 8; col++) {
+      const cell = dataRow.getCell(col);
+      cell.font = { name: 'Arial', size: 10, color: { argb: 'FF334155' } };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+      };
+
+      if (col > 1) {
+        cell.alignment = { horizontal: 'right', vertical: 'middle' };
+        cell.numFmt = '"AED" #,##0.00';
+      } else {
+        cell.alignment = { horizontal: 'left', vertical: 'middle' };
+        cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F172A' } };
+      }
+    }
+
+    for (let col = 6; col <= 8; col++) {
+      const cell = dataRow.getCell(col);
+      const val = cell.value as number;
+      cell.numFmt = '+"AED" #,##0.00;-"AED" #,##0.00;"AED" 0.00';
+      if (val > 0) {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD1FAE5' } };
+        cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF065F46' } };
+      } else if (val < 0) {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
+        cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF991B1B' } };
+      }
+    }
+  });
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = window.URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `Consolidated_Sales_Report_${anchorDate}.xlsx`;
+  anchor.click();
+  window.URL.revokeObjectURL(url);
+};
+

@@ -440,6 +440,191 @@ async function generateExcelBuffer(trendData, totals, selectedDate, anchorDates)
   return await workbook.xlsx.writeBuffer();
 }
 
+async function generateSalesExcelBuffer(trendData, totals, selectedDate, anchorDates) {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Sales Analysis');
+  worksheet.views = [{ showGridLines: true }];
+
+  worksheet.columns = [
+    { header: 'Venue Name', key: 'venue', width: 32 },
+    { header: 'Selected Day', key: 'thisWk', width: 18 },
+    { header: 'Last Week', key: 'lastWk', width: 18 },
+    { header: 'Last Month', key: 'lastMth', width: 18 },
+    { header: 'Last Year', key: 'lastYr', width: 18 },
+    { header: 'Var LW', key: 'varLw', width: 16 },
+    { header: 'Var LM', key: 'varLm', width: 16 },
+    { header: 'Var LY', key: 'varLy', width: 16 },
+  ];
+
+  const formatDate = (d) => {
+    const dateObj = new Date(d);
+    return `${String(dateObj.getDate()).padStart(2, '0')}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getFullYear()).slice(-2)}`;
+  };
+
+  worksheet.addRow([]);
+  const titleRow = worksheet.addRow(['Daily Sales Tracker']);
+  titleRow.getCell(1).font = { name: 'Arial', size: 16, bold: true, color: { argb: 'FF0F172A' } };
+  
+  const dateRow = worksheet.addRow([`Report Date: ${selectedDate}`]);
+  dateRow.getCell(1).font = { name: 'Arial', size: 11, italic: true, color: { argb: 'FF475569' } };
+  worksheet.addRow([]);
+
+  worksheet.addRow([
+    'Venue Name',
+    'Selected Day',
+    'Last Week',
+    'Last Month',
+    'Last Year',
+    'Var LW',
+    'Var LM',
+    'Var LY'
+  ]);
+  worksheet.addRow([
+    '',
+    formatDate(anchorDates[0]),
+    formatDate(anchorDates[1]),
+    formatDate(anchorDates[2]),
+    formatDate(anchorDates[3]),
+    '',
+    '',
+    ''
+  ]);
+
+  worksheet.mergeCells('A5:A6');
+  worksheet.mergeCells('F5:F6');
+  worksheet.mergeCells('G5:G6');
+  worksheet.mergeCells('H5:H6');
+
+  const headerCells = [
+    'A5', 'B5', 'C5', 'D5', 'E5', 'F5', 'G5', 'H5',
+    'B6', 'C6', 'D6', 'E6'
+  ];
+
+  headerCells.forEach(cellRef => {
+    const cell = worksheet.getCell(cellRef);
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF1E293B' }
+    };
+    cell.font = {
+      name: 'Arial',
+      size: 10,
+      bold: true,
+      color: { argb: 'FFFFFFFF' }
+    };
+    cell.alignment = {
+      horizontal: 'center',
+      vertical: 'middle',
+      wrapText: true
+    };
+    cell.border = {
+      top: { style: 'thin', color: { argb: 'FF475569' } },
+      bottom: { style: 'thin', color: { argb: 'FF475569' } },
+      left: { style: 'thin', color: { argb: 'FF475569' } },
+      right: { style: 'thin', color: { argb: 'FF475569' } }
+    };
+  });
+
+  worksheet.getRow(5).height = 24;
+  worksheet.getRow(6).height = 20;
+
+  const totalRow = worksheet.addRow([
+    'Company Total',
+    totals.thisWk,
+    totals.lastWk,
+    totals.lastMth,
+    totals.lastYr,
+    totals.thisWk - totals.lastWk,
+    totals.thisWk - totals.lastMth,
+    totals.thisWk - totals.lastYr
+  ]);
+
+  for (let col = 1; col <= 8; col++) {
+    const cell = totalRow.getCell(col);
+    cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F172A' } };
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFF1F5F9' }
+    };
+    cell.border = {
+      top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+      bottom: { style: 'double', color: { argb: 'FF0F172A' } },
+      left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+      right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+    };
+    if (col > 1) {
+      cell.alignment = { horizontal: 'right', vertical: 'middle' };
+      cell.numFmt = '"AED" #,##0.00';
+    } else {
+      cell.alignment = { horizontal: 'left', vertical: 'middle' };
+    }
+  }
+
+  for (let col = 6; col <= 8; col++) {
+    const cell = totalRow.getCell(col);
+    const val = cell.value;
+    cell.numFmt = '+"AED" #,##0.00;-"AED" #,##0.00;"AED" 0.00';
+    if (val > 0) {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD1FAE5' } };
+      cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF065F46' } };
+    } else if (val < 0) {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
+      cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF991B1B' } };
+    }
+  }
+
+  trendData.forEach((row) => {
+    const rowData = [
+      row.storeName,
+      row.thisWk,
+      row.lastWk,
+      row.lastMth,
+      row.lastYr,
+      row.thisWk - row.lastWk,
+      row.thisWk - row.lastMth,
+      row.thisWk - row.lastYr
+    ];
+    const dataRow = worksheet.addRow(rowData);
+    dataRow.height = 20;
+
+    for (let col = 1; col <= 8; col++) {
+      const cell = dataRow.getCell(col);
+      cell.font = { name: 'Arial', size: 10, color: { argb: 'FF334155' } };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+      };
+
+      if (col > 1) {
+        cell.alignment = { horizontal: 'right', vertical: 'middle' };
+        cell.numFmt = '"AED" #,##0.00';
+      } else {
+        cell.alignment = { horizontal: 'left', vertical: 'middle' };
+        cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F172A' } };
+      }
+    }
+
+    for (let col = 6; col <= 8; col++) {
+      const cell = dataRow.getCell(col);
+      const val = cell.value;
+      cell.numFmt = '+"AED" #,##0.00;-"AED" #,##0.00;"AED" 0.00';
+      if (val > 0) {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD1FAE5' } };
+        cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF065F46' } };
+      } else if (val < 0) {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
+        cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF991B1B' } };
+      }
+    }
+  });
+
+  return await workbook.xlsx.writeBuffer();
+}
+
 async function uploadToGoogleDrive(fileBuffer, fileName) {
   try {
     const authJson = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
@@ -588,6 +773,102 @@ app.post('/api/v1/reports/email-cover-tracker', async (req, res) => {
 
     } catch (error) {
         console.error("[Backend] Email and upload report error:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/v1/reports/email-sales-tracker', async (req, res) => {
+    try {
+        const { selectedDate, trendData, totals } = req.body;
+        if (!selectedDate || !trendData || !totals) {
+            return res.status(400).json({ error: "Missing required fields: selectedDate, trendData, or totals." });
+        }
+
+        const today = new Date(selectedDate);
+        const lastWk = new Date(today);
+        lastWk.setDate(today.getDate() - 7);
+        const lastMth = new Date(today);
+        lastMth.setDate(today.getDate() - 28);
+        const lastYr = new Date(today);
+        lastYr.setDate(today.getDate() - 364);
+        const anchorDates = [today, lastWk, lastMth, lastYr];
+
+        // 1. Generate Excel workbook
+        const excelBuffer = await generateSalesExcelBuffer(trendData, totals, selectedDate, anchorDates);
+        const fileName = `Consolidated_Sales_Report_${selectedDate}.xlsx`;
+
+        // 2. Upload to Google Drive
+        let driveResult = null;
+        let driveError = null;
+        try {
+            driveResult = await uploadToGoogleDrive(excelBuffer, fileName);
+        } catch (err) {
+            console.error("[Backend] Google Drive Upload Failed:", err.message);
+            driveError = err.message;
+        }
+
+        // 3. Email report (Using the same email sending helper but with customized subject)
+        let emailResult = false;
+        let emailError = null;
+        try {
+            const host = process.env.SMTP_HOST;
+            const port = parseInt(process.env.SMTP_PORT || '587');
+            const user = process.env.SMTP_USER;
+            const pass = process.env.SMTP_PASS;
+            const recipients = process.env.REPORT_RECIPIENTS;
+
+            if (!host || !user || !pass || !recipients) {
+                console.warn("SMTP configuration or REPORT_RECIPIENTS is missing. Skipping email send.");
+            } else {
+                const transporter = nodemailer.createTransport({
+                    host,
+                    port,
+                    secure: port === 465,
+                    auth: { user, pass }
+                });
+
+                const mailOptions = {
+                    from: `"Linga Sales Tracker" <${user}>`,
+                    to: recipients,
+                    subject: `Daily Sales Tracker Report - ${selectedDate}`,
+                    text: `Hello,\n\nPlease find attached the Consolidated Sales Tracker Report for ${selectedDate}.\n\nThis is an automated system message.`,
+                    attachments: [
+                        {
+                            filename: fileName,
+                            content: excelBuffer
+                        }
+                    ]
+                };
+
+                const info = await transporter.sendMail(mailOptions);
+                console.log("Sales Email sent successfully:", info.messageId);
+                emailResult = true;
+            }
+        } catch (err) {
+            console.error("[Backend] Sales Email Send Failed:", err.message);
+            emailError = err.message;
+        }
+
+        if (!emailResult && !driveResult) {
+            return res.status(500).json({
+                success: false,
+                error: `Failed to process report: Email error: ${emailError || 'unknown'}, Drive error: ${driveError || 'unknown'}`
+            });
+        }
+
+        res.json({
+            success: true,
+            driveUploaded: !!driveResult,
+            driveLink: driveResult?.webViewLink || null,
+            emailSent: emailResult,
+            warnings: {
+                email: emailError,
+                drive: driveError
+            }
+        });
+
+    } catch (error) {
+        console.error("[Backend] Email and upload sales report error:", error);
         res.status(500).json({ error: error.message });
     }
 });
