@@ -28,7 +28,17 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
   const [msg, setMsg] = useState("");
   
   // Automation settings state
-  const [autoSettings, setAutoSettings] = useState({ enabled: true, fetchTime: "08:00" });
+  const [autoSettings, setAutoSettings] = useState<{
+    enabled: boolean;
+    fetchTime: string;
+    reportTypes: ("Covers" | "Sales")[];
+    selectedStores: string[];
+  }>({
+    enabled: true,
+    fetchTime: "08:00",
+    reportTypes: ["Covers"],
+    selectedStores: [],
+  });
 
   // Mailer settings state
   const [mailerSettings, setMailerSettings] = useState<MailerSettings>({
@@ -71,7 +81,16 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
       ]);
       setStores(s || []);
       setUsers(u || []);
-      setAutoSettings(auto || { enabled: true, fetchTime: "08:00" });
+      const defaultAuto = {
+        enabled: true,
+        fetchTime: "08:00",
+        reportTypes: ["Covers"] as ("Covers" | "Sales")[],
+        selectedStores: [] as string[]
+      };
+      setAutoSettings({
+        ...defaultAuto,
+        ...(auto || {}),
+      });
       setReportLogs(logs || []);
       if (mailer) {
         setMailerSettings({
@@ -473,32 +492,111 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                   </div>
 
                   {autoSettings.enabled && (
-                    <div className="space-y-2 animate-fadeIn">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
-                        Report Distribution Time (Dubai Time / UTC+4)
-                      </label>
-                      <select
-                        value={autoSettings.fetchTime}
-                        onChange={(e) => setAutoSettings({ ...autoSettings, fetchTime: e.target.value })}
-                        className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
-                      >
-                        {Array.from({ length: 24 }).map((_, idx) => {
-                          const hour = String(idx).padStart(2, "0");
-                          const label = idx === 0 
-                            ? "12:00 AM (Midnight)" 
-                            : idx === 12 
-                              ? "12:00 PM (Noon)" 
-                              : idx < 12 
-                                ? `${idx}:00 AM` 
-                                : `${idx - 12}:00 PM`;
-                          return (
-                            <option key={hour} value={`${hour}:00`}>
-                              {label}
-                            </option>
-                          );
-                        })}
-                      </select>
-                    </div>
+                    <>
+                      <div className="space-y-2 animate-fadeIn">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
+                          Automated Report Types
+                        </label>
+                        <div className="flex gap-4">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={autoSettings.reportTypes?.includes("Covers")}
+                              onChange={(e) => {
+                                const current = autoSettings.reportTypes || [];
+                                const next = e.target.checked
+                                  ? [...current, "Covers"]
+                                  : current.filter((r) => r !== "Covers");
+                                setAutoSettings({ ...autoSettings, reportTypes: next as any });
+                              }}
+                              className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500 border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900"
+                            />
+                            <span className="text-sm dark:text-slate-300">Covers Report</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={autoSettings.reportTypes?.includes("Sales")}
+                              onChange={(e) => {
+                                const current = autoSettings.reportTypes || [];
+                                const next = e.target.checked
+                                  ? [...current, "Sales"]
+                                  : current.filter((r) => r !== "Sales");
+                                setAutoSettings({ ...autoSettings, reportTypes: next as any });
+                              }}
+                              className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500 border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900"
+                            />
+                            <span className="text-sm dark:text-slate-300">Sales Report</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 animate-fadeIn">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
+                          Included Store Locations (Multi-Select)
+                        </label>
+                        <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-4 max-h-48 overflow-y-auto custom-scrollbar space-y-2">
+                          {stores.map((store) => {
+                            const isChecked = autoSettings.selectedStores?.includes(store.id) ?? false;
+                            return (
+                              <label
+                                key={store.id}
+                                className="flex items-center gap-3 cursor-pointer group"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => {
+                                    const current = autoSettings.selectedStores || [];
+                                    const next = current.includes(store.id)
+                                      ? current.filter((id) => id !== store.id)
+                                      : [...current, store.id];
+                                    setAutoSettings({ ...autoSettings, selectedStores: next });
+                                  }}
+                                  className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500 border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900"
+                                />
+                                <span className="text-sm dark:text-slate-300 group-hover:text-rose-600 transition-colors">
+                                  {store.name}
+                                </span>
+                              </label>
+                            );
+                          })}
+                          {stores.length === 0 && (
+                            <p className="text-xs text-slate-400 italic text-center py-2">
+                              No registered stores found.
+                            </p>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-slate-400 ml-1">Leave all unchecked to include all stores by default.</p>
+                      </div>
+
+                      <div className="space-y-2 animate-fadeIn">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
+                          Report Distribution Time (Dubai Time / UTC+4)
+                        </label>
+                        <select
+                          value={autoSettings.fetchTime}
+                          onChange={(e) => setAutoSettings({ ...autoSettings, fetchTime: e.target.value })}
+                          className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
+                        >
+                          {Array.from({ length: 24 }).map((_, idx) => {
+                            const hour = String(idx).padStart(2, "0");
+                            const label = idx === 0 
+                              ? "12:00 AM (Midnight)" 
+                              : idx === 12 
+                                ? "12:00 PM (Noon)" 
+                                : idx < 12 
+                                  ? `${idx}:00 AM` 
+                                  : `${idx - 12}:00 PM`;
+                            return (
+                              <option key={hour} value={`${hour}:00`}>
+                                {label}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </div>
+                    </>
                   )}
                 </div>
 

@@ -441,7 +441,23 @@ async function generateExcelBuffer(trendData, totals, selectedDate, anchorDates)
   return await workbook.xlsx.writeBuffer();
 }
 
-async function generateSalesExcelBuffer(trendData, totals, selectedDate, anchorDates) {
+async function fetchStoreDiscountsBackend(storeId, dateStr) {
+  try {
+    const discountUrl = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/discountReport`;
+    const response = await callExternalApi(discountUrl, {
+      dateOption: 'DR',
+      fromDate: dateStr,
+      toDate: dateStr,
+      selectedReportType: 'By Discount Type'
+    });
+    return response.data || [];
+  } catch (error) {
+    console.error(`Backend discount fetch failed for store ${storeId} on ${dateStr}:`, error.message);
+    return [];
+  }
+}
+
+async function generateSalesExcelBuffer(trendData, totals, selectedDate, anchorDates, discountsData = []) {
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet('Sales Analysis');
   worksheet.views = [{ showGridLines: true }];
@@ -621,6 +637,118 @@ async function generateSalesExcelBuffer(trendData, totals, selectedDate, anchorD
         cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF991B1B' } };
       }
     }
+  });
+
+  // Add second sheet for raw sales data
+  const dataSheet = workbook.addWorksheet('SalesData');
+  dataSheet.views = [{ showGridLines: true }];
+
+  dataSheet.columns = [
+    { header: 'Store', key: 'store', width: 25 },
+    { header: 'Ticket No', key: 'ticket', width: 14 },
+    { header: 'Customer Name', key: 'customer', width: 20 },
+    { header: 'Open Time', key: 'openTime', width: 22 },
+    { header: 'Floor', key: 'floor', width: 12 },
+    { header: 'Table', key: 'table', width: 10 },
+    { header: 'Net Sales', key: 'netSales', width: 14 },
+    { header: 'Total Tax', key: 'tax', width: 12 },
+    { header: 'Discount', key: 'discount', width: 12 },
+    { header: 'Gross Receipt', key: 'gross', width: 14 },
+    { header: 'Guest Count', key: 'guests', width: 12 },
+    { header: 'Date', key: 'date', width: 14 }
+  ];
+
+  const dataHeaderCells = ['A1', 'B1', 'C1', 'D1', 'E1', 'F1', 'G1', 'H1', 'I1', 'J1', 'K1', 'L1'];
+  dataHeaderCells.forEach(cellRef => {
+    const cell = dataSheet.getCell(cellRef);
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+    cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+  });
+
+  const parseFloatVal = (val) => {
+    if (typeof val === 'number') return val;
+    if (!val) return 0;
+    const clean = String(val).replace(/[$,\s]/g, '');
+    const num = parseFloat(clean);
+    return isNaN(num) ? 0 : num;
+  };
+
+  trendData.forEach(storeRow => {
+    const rawSales = storeRow.salesData || [];
+    rawSales.forEach((sale) => {
+      const saleRow = dataSheet.addRow([
+        storeRow.storeName,
+        sale.ticketNo,
+        sale.customerName || 'Walk-in Guest',
+        sale.saleOpenTime,
+        sale.floorNo,
+        sale.tableNo,
+        parseFloatVal(sale.netSalesVal),
+        parseFloatVal(sale.taxVal),
+        parseFloatVal(sale.discountVal),
+        parseFloatVal(sale.grossReceiptStr),
+        sale.guestCount,
+        selectedDate
+      ]);
+
+      for (let col = 7; col <= 10; col++) {
+        const cell = saleRow.getCell(col);
+        cell.numFmt = '"AED" #,##0.00';
+        cell.alignment = { horizontal: 'right' };
+      }
+      saleRow.getCell(11).numFmt = '#,##0';
+      saleRow.getCell(11).alignment = { horizontal: 'right' };
+    });
+  });
+
+  // Add third sheet for Discount Summary
+  const discountSheet = workbook.addWorksheet('Discount Summary');
+  discountSheet.views = [{ showGridLines: true }];
+
+  discountSheet.columns = [
+    { header: 'Store', key: 'store', width: 25 },
+    { header: 'Approved By', key: 'approvedBy', width: 18 },
+    { header: 'Check/Ticket No', key: 'check', width: 14 },
+    { header: 'Discount Amount', key: 'discountAmt', width: 16 },
+    { header: 'Applied By', key: 'appliedBy', width: 18 },
+    { header: 'Discount Coupon', key: 'coupon', width: 18 },
+    { header: 'Discount Name', key: 'name', width: 20 },
+    { header: 'Discount Type', key: 'type', width: 16 },
+    { header: 'Gross Sales', key: 'grossSales', width: 14 },
+    { header: 'Quantity', key: 'quantity', width: 10 },
+    { header: 'Reason', key: 'reason', width: 25 }
+  ];
+
+  const discountHeaderCells = ['A1', 'B1', 'C1', 'D1', 'E1', 'F1', 'G1', 'H1', 'I1', 'J1', 'K1'];
+  discountHeaderCells.forEach(cellRef => {
+    const cell = discountSheet.getCell(cellRef);
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+    cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+  });
+
+  discountsData.forEach(item => {
+    const row = discountSheet.addRow([
+      item.storeName,
+      item.approvedBy,
+      item.check,
+      parseFloatVal(item.discountAmtStr),
+      item.discountAppliedBy,
+      item.discountCoupon,
+      item.discountName,
+      item.discountType,
+      parseFloatVal(item.grossSalesStr),
+      item.quantity,
+      item.reason
+    ]);
+
+    row.getCell(4).numFmt = '"AED" #,##0.00';
+    row.getCell(4).alignment = { horizontal: 'right' };
+    row.getCell(9).numFmt = '"AED" #,##0.00';
+    row.getCell(9).alignment = { horizontal: 'right' };
+    row.getCell(10).numFmt = '#,##0';
+    row.getCell(10).alignment = { horizontal: 'right' };
   });
 
   return await workbook.xlsx.writeBuffer();
@@ -929,8 +1057,24 @@ app.post('/api/v1/reports/email-sales-tracker', async (req, res) => {
         lastYr.setDate(today.getDate() - 364);
         const anchorDates = [today, lastWk, lastMth, lastYr];
 
+        // Fetch discounts in parallel for all stores in trendData
+        const discountsData = [];
+        try {
+            await Promise.all(trendData.map(async (storeRow) => {
+                const discounts = await fetchStoreDiscountsBackend(storeRow.storeId, selectedDate);
+                discounts.forEach(d => {
+                    discountsData.push({
+                        storeName: storeRow.storeName,
+                        ...d
+                    });
+                });
+            }));
+        } catch (err) {
+            console.error("[Backend] Failed to fetch store discounts:", err.message);
+        }
+
         // 1. Generate Excel workbook
-        const excelBuffer = await generateSalesExcelBuffer(trendData, totals, selectedDate, anchorDates);
+        const excelBuffer = await generateSalesExcelBuffer(trendData, totals, selectedDate, anchorDates, discountsData);
         const fileName = `Consolidated_Sales_Report_${selectedDate}.xlsx`;
 
         // 2. Upload to Google Drive
@@ -993,6 +1137,84 @@ app.post('/api/v1/reports/email-sales-tracker', async (req, res) => {
     }
 });
 
+async function fetchStoreSalesBackend(storeId, dates) {
+  const results = {};
+  const formatDateParam = (d) => {
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}-${month}-${year}`;
+  };
+  const formatDateString = (d) => {
+    const day = String(d.getDate()).padStart(2, '0');
+    const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+    return `${day}-${months[d.getMonth()]}-${d.getFullYear()}`;
+  };
+  const parseFloatVal = (val) => {
+    if (typeof val === 'number') return val;
+    if (!val) return 0;
+    const clean = String(val).replace(/[$,\s]/g, '');
+    const num = parseFloat(clean);
+    return isNaN(num) ? 0 : num;
+  };
+
+  await Promise.all(
+    dates.map(async (date, index) => {
+      const formatted = formatDateParam(date);
+      const dateKey = formatDateString(date);
+
+      try {
+        const salesUrl = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/getsale`;
+        const summaryUrl = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/saleSummaryReport`;
+
+        const [salesRes, summaryRes] = await Promise.all([
+          callExternalApi(salesUrl, { fromDate: formatted, toDate: formatted }),
+          callExternalApi(summaryUrl, { dateOption: 'DR', fromDate: formatted, toDate: formatted })
+        ]);
+
+        const salesData = salesRes.data;
+        const summaryData = summaryRes.data;
+
+        let dailyNet = 0;
+        const salesList = [];
+
+        if (salesData?.sales) {
+          salesData.sales.forEach((sale) => {
+            const summary = Array.isArray(summaryData) ? summaryData.find((s) => s.id === sale.id) : null;
+            const netSales = parseFloatVal(summary?.netSales || sale.netSalesStr);
+            const discounts = parseFloatVal(summary?.discounts || 0);
+
+            if (netSales > 0 || discounts > 0) {
+              dailyNet += netSales;
+              if (index === 0) {
+                salesList.push({
+                  ticketNo: sale.ticketNo,
+                  customerName: sale.customerName || 'Walk-in Guest',
+                  saleOpenTime: sale.saleOpenTime,
+                  floorNo: summary?.floorNo || 'Unknown',
+                  tableNo: summary?.tableNo || 'Unknown',
+                  netSalesVal: netSales,
+                  taxVal: parseFloatVal(summary?.totalTaxAmount || sale.totalTaxAmountStr),
+                  discountVal: discounts,
+                  grossReceiptStr: sale.grossReceiptStr,
+                  guestCount: sale.guestCount
+                });
+              }
+            }
+          });
+        }
+
+        results[dateKey] = { netSales: dailyNet, sales: salesList };
+      } catch (e) {
+        console.error(`Backend Sales fetch failed for store ${storeId} date ${formatted}:`, e.message);
+        results[dateKey] = { netSales: 0, sales: [] };
+      }
+    })
+  );
+
+  return results;
+}
+
 // --- Scheduled Cron Job Route ---
 app.get('/api/v1/cron/daily-cover-tracker', async (req, res) => {
     // 1. Authorization Check
@@ -1029,7 +1251,7 @@ app.get('/api/v1/cron/daily-cover-tracker', async (req, res) => {
             }
         }
 
-        console.log("[Cron] Running scheduled Daily Cover Report generation...");
+        console.log("[Cron] Running scheduled Daily Report generation...");
 
         // 5. Resolve anchor date (yesterday)
         const today = new Date();
@@ -1054,78 +1276,174 @@ app.get('/api/v1/cron/daily-cover-tracker', async (req, res) => {
         // 4. Fetch stores
         const stores = await getActiveStores();
 
-        // 5. Fetch covers for all stores and periods
-        const trendData = [];
-        const totals = { thisWk: 0, lastWk: 0, lastMth: 0, lastYr: 0 };
+        const reportTypes = settings.reportTypes && settings.reportTypes.length > 0
+            ? settings.reportTypes
+            : ["Covers"];
 
-        for (let i = 0; i < stores.length; i++) {
-            const store = stores[i];
-            console.log(`[Cron] Fetching data for ${store.name}...`);
-            const summary = await fetchStoreTrendSummaryBackend(store.id, anchorDates);
-            
-            const storeData = {
-                storeId: store.id,
-                storeName: store.name,
-                thisWk: summary[formatDateString(anchorDates[0])]?.covers || 0,
-                lastWk: summary[formatDateString(anchorDates[1])]?.covers || 0,
-                lastMth: summary[formatDateString(anchorDates[2])]?.covers || 0,
-                lastYr: summary[formatDateString(anchorDates[3])]?.covers || 0,
-            };
+        const filteredStores = settings.selectedStores && settings.selectedStores.length > 0
+            ? stores.filter(s => settings.selectedStores.includes(s.id))
+            : stores;
 
-            trendData.push(storeData);
-            totals.thisWk += storeData.thisWk;
-            totals.lastWk += storeData.lastWk;
-            totals.lastMth += storeData.lastMth;
-            totals.lastYr += storeData.lastYr;
+        const resultsSummary = {
+            date: selectedDate,
+            storesSynced: filteredStores.length,
+            reportsRun: []
+        };
+
+        for (const reportType of reportTypes) {
+            if (reportType === "Covers") {
+                const trendData = [];
+                const totals = { thisWk: 0, lastWk: 0, lastMth: 0, lastYr: 0 };
+
+                for (let i = 0; i < filteredStores.length; i++) {
+                    const store = filteredStores[i];
+                    console.log(`[Cron-Covers] Fetching data for ${store.name}...`);
+                    const summary = await fetchStoreTrendSummaryBackend(store.id, anchorDates);
+                    
+                    const storeData = {
+                        storeId: store.id,
+                        storeName: store.name,
+                        thisWk: summary[formatDateString(anchorDates[0])]?.covers || 0,
+                        lastWk: summary[formatDateString(anchorDates[1])]?.covers || 0,
+                        lastMth: summary[formatDateString(anchorDates[2])]?.covers || 0,
+                        lastYr: summary[formatDateString(anchorDates[3])]?.covers || 0,
+                    };
+
+                    trendData.push(storeData);
+                    totals.thisWk += storeData.thisWk;
+                    totals.lastWk += storeData.lastWk;
+                    totals.lastMth += storeData.lastMth;
+                    totals.lastYr += storeData.lastYr;
+                }
+
+                const excelBuffer = await generateExcelBuffer(trendData, totals, selectedDate, anchorDates);
+                const fileName = `Consolidated_Cover_Report_${selectedDate}.xlsx`;
+
+                let driveResult = null;
+                let driveError = null;
+                try {
+                    driveResult = await uploadToGoogleDrive(excelBuffer, fileName, mailerSettings, selectedDate);
+                } catch (err) {
+                    console.error("[Cron-Covers] Google Drive Upload Failed:", err.message);
+                    driveError = err.message;
+                }
+
+                let emailResult = false;
+                let emailError = null;
+                try {
+                    emailResult = await sendEmailReport(excelBuffer, fileName, selectedDate, mailerSettings, "Covers");
+                } catch (err) {
+                    console.error("[Cron-Covers] Email Send Failed:", err.message);
+                    emailError = err.message;
+                }
+
+                const runStatus = (emailResult || driveResult) ? "SUCCESS" : "FAILED";
+                const runRecipients = mailerSettings?.reportRecipients || process.env.REPORT_RECIPIENTS || "";
+                const runErrorMsg = (!emailResult && !driveResult) 
+                  ? `Email error: ${emailError || 'unknown'}, Drive error: ${driveError || 'unknown'}`
+                  : (emailError || driveError || null);
+
+                await writeReportLogBackend({
+                    type: "Automated",
+                    reportType: "Covers",
+                    reportDate: selectedDate,
+                    status: runStatus,
+                    recipients: runRecipients,
+                    driveLink: driveResult?.webViewLink || null,
+                    errorMsg: runErrorMsg
+                });
+
+                resultsSummary.reportsRun.push({
+                    type: "Covers",
+                    emailSent: emailResult,
+                    driveUploaded: !!driveResult,
+                    driveLink: driveResult?.webViewLink || null
+                });
+            } else if (reportType === "Sales") {
+                const trendData = [];
+                const totals = { thisWk: 0, lastWk: 0, lastMth: 0, lastYr: 0 };
+                const discountsData = [];
+
+                for (let i = 0; i < filteredStores.length; i++) {
+                    const store = filteredStores[i];
+                    console.log(`[Cron-Sales] Fetching data for ${store.name}...`);
+                    const salesSummary = await fetchStoreSalesBackend(store.id, anchorDates);
+                    
+                    const storeData = {
+                        storeId: store.id,
+                        storeName: store.name,
+                        thisWk: salesSummary[formatDateString(anchorDates[0])]?.netSales || 0,
+                        lastWk: salesSummary[formatDateString(anchorDates[1])]?.netSales || 0,
+                        lastMth: salesSummary[formatDateString(anchorDates[2])]?.netSales || 0,
+                        lastYr: salesSummary[formatDateString(anchorDates[3])]?.netSales || 0,
+                        salesData: salesSummary[formatDateString(anchorDates[0])]?.sales || []
+                    };
+
+                    trendData.push(storeData);
+                    totals.thisWk += storeData.thisWk;
+                    totals.lastWk += storeData.lastWk;
+                    totals.lastMth += storeData.lastMth;
+                    totals.lastYr += storeData.lastYr;
+
+                    // Fetch discounts for this store
+                    const discounts = await fetchStoreDiscountsBackend(store.id, selectedDate);
+                    discounts.forEach(d => {
+                        discountsData.push({
+                            storeName: store.name,
+                            ...d
+                        });
+                    });
+                }
+
+                const excelBuffer = await generateSalesExcelBuffer(trendData, totals, selectedDate, anchorDates, discountsData);
+                const fileName = `Consolidated_Sales_Report_${selectedDate}.xlsx`;
+
+                let driveResult = null;
+                let driveError = null;
+                try {
+                    driveResult = await uploadToGoogleDrive(excelBuffer, fileName, mailerSettings, selectedDate);
+                } catch (err) {
+                    console.error("[Cron-Sales] Google Drive Upload Failed:", err.message);
+                    driveError = err.message;
+                }
+
+                let emailResult = false;
+                let emailError = null;
+                try {
+                    emailResult = await sendEmailReport(excelBuffer, fileName, selectedDate, mailerSettings, "Sales");
+                } catch (err) {
+                    console.error("[Cron-Sales] Email Send Failed:", err.message);
+                    emailError = err.message;
+                }
+
+                const runStatus = (emailResult || driveResult) ? "SUCCESS" : "FAILED";
+                const runRecipients = mailerSettings?.reportRecipients || process.env.REPORT_RECIPIENTS || "";
+                const runErrorMsg = (!emailResult && !driveResult) 
+                  ? `Email error: ${emailError || 'unknown'}, Drive error: ${driveError || 'unknown'}`
+                  : (emailError || driveError || null);
+
+                await writeReportLogBackend({
+                    type: "Automated",
+                    reportType: "Sales",
+                    reportDate: selectedDate,
+                    status: runStatus,
+                    recipients: runRecipients,
+                    driveLink: driveResult?.webViewLink || null,
+                    errorMsg: runErrorMsg
+                });
+
+                resultsSummary.reportsRun.push({
+                    type: "Sales",
+                    emailSent: emailResult,
+                    driveUploaded: !!driveResult,
+                    driveLink: driveResult?.webViewLink || null
+                });
+            }
         }
-
-        // 6. Generate Excel workbook
-        const excelBuffer = await generateExcelBuffer(trendData, totals, selectedDate, anchorDates);
-        const fileName = `Consolidated_Cover_Report_${selectedDate}.xlsx`;
-
-        // 7. Upload to Google Drive
-        let driveResult = null;
-        let driveError = null;
-        try {
-            driveResult = await uploadToGoogleDrive(excelBuffer, fileName, mailerSettings, selectedDate);
-        } catch (err) {
-            console.error("[Cron] Google Drive Upload Failed:", err.message);
-            driveError = err.message;
-        }
-
-        // 8. Email report
-        let emailResult = false;
-        let emailError = null;
-        try {
-            emailResult = await sendEmailReport(excelBuffer, fileName, selectedDate, mailerSettings, "Covers");
-        } catch (err) {
-            console.error("[Cron] Email Send Failed:", err.message);
-            emailError = err.message;
-        }
-
-        const runStatus = (emailResult || driveResult) ? "SUCCESS" : "FAILED";
-        const runRecipients = mailerSettings?.reportRecipients || process.env.REPORT_RECIPIENTS || "";
-        const runErrorMsg = (!emailResult && !driveResult) 
-          ? `Email error: ${emailError || 'unknown'}, Drive error: ${driveError || 'unknown'}`
-          : (emailError || driveError || null);
-
-        await writeReportLogBackend({
-            type: "Automated",
-            reportType: "Covers",
-            reportDate: selectedDate,
-            status: runStatus,
-            recipients: runRecipients,
-            driveLink: driveResult?.webViewLink || null,
-            errorMsg: runErrorMsg
-        });
 
         res.json({
             success: true,
-            date: selectedDate,
-            storesSynced: stores.length,
-            driveUploaded: !!driveResult,
-            driveLink: driveResult?.webViewLink || null,
-            emailSent: emailResult
+            ...resultsSummary
         });
 
     } catch (error) {

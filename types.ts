@@ -116,6 +116,8 @@ export interface FetchedData {
 export interface AutomationSettings {
   enabled: boolean;
   fetchTime: string; // e.g. "08:00"
+  reportTypes?: ("Covers" | "Sales")[];
+  selectedStores?: string[];
 }
 
 export interface MailerSettings {
