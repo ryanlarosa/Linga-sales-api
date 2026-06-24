@@ -146,7 +146,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
           onRefresh={loadData}
         />
 
-        {view !== "SETTINGS" && view !== "TRENDS" && (
+        {view !== "SETTINGS" && view !== "TRENDS" && view !== "SALES_TRENDS" && (
           <DashboardFilters
             storeList={storeList}
             selectedStore={selectedStore}
