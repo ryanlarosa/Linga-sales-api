@@ -125,24 +125,36 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
       const discountDatePart = parseDiscountDate(item.date);
       const discountGrossSales = parseNum(item.grossSalesStr);
 
-      // Get all sales with matching ticket number
-      let potentialMatches = data.sales.filter(
-        (s) => s.ticketNo === item.check,
-      );
+      // Get all sales with matching ticket number and date first to avoid matching wrong dates on reused tickets
+      let potentialMatches = data.sales.filter((s) => {
+        if (s.ticketNo !== item.check) return false;
+        if (!s.startDate) return true; // Fallback if no date on sale
+        const saleDatePart = s.startDate.split("T")[0];
+        return saleDatePart === discountDatePart;
+      });
+
+      // Fallback: match by ticket number only if no exact date match
+      if (potentialMatches.length === 0) {
+        potentialMatches = data.sales.filter(
+          (s) => s.ticketNo === item.check,
+        );
+      }
 
       if (potentialMatches.length > 0) {
         let matchedSale = potentialMatches[0];
 
-        // If there's more than one sale with same ticket number, match by amount
+        // If there's more than one potential sale match, match by amount
         if (potentialMatches.length > 1) {
           // Try to find a sale where grossReceiptStr matches grossSalesStr (within tolerance)
           matchedSale =
             potentialMatches.find((s) => {
               const saleGrossReceipt = parseNum(s.grossReceiptStr);
+              if (saleGrossReceipt === discountGrossSales) return true;
               // Check if the amounts are close (within 2% tolerance)
+              const divisor = saleGrossReceipt === 0 ? 1 : saleGrossReceipt;
               return (
                 Math.abs(saleGrossReceipt - discountGrossSales) <
-                saleGrossReceipt * 0.02
+                divisor * 0.02
               );
             }) || potentialMatches[0];
         }
