@@ -1,6 +1,6 @@
 import { db } from "./firebase";
 import { collection, getDocs, query, where, doc, setDoc, deleteDoc, updateDoc, QueryDocumentSnapshot, DocumentData, getDoc } from "firebase/firestore";
-import { User, Store, AutomationSettings } from "../types";
+import { User, Store, AutomationSettings, MailerSettings } from "../types";
 import { MOCK_USERS, STORE_LIST } from "../constants";
 
 // Helper to check if error is due to missing DB setup in Console
@@ -224,6 +224,34 @@ export const updateAutomationSettings = async (settings: AutomationSettings): Pr
     await setDoc(docRef, settings, { merge: true });
   } catch (error) {
     console.error("Error updating automation settings:", error);
+    throw error;
+  }
+};
+
+export const getMailerSettings = async (): Promise<MailerSettings> => {
+  try {
+    const docRef = doc(db, "configs", "mailer_settings");
+    const snapshot = await getDoc(docRef);
+    if (snapshot.exists()) {
+      return snapshot.data() as MailerSettings;
+    }
+    return {};
+  } catch (error) {
+    if (isMissingDbError(error)) {
+        console.warn("Firestore not configured. Using empty mailer settings.");
+    } else {
+        console.error("Error getting mailer settings:", error);
+    }
+    return {};
+  }
+};
+
+export const updateMailerSettings = async (settings: MailerSettings): Promise<void> => {
+  try {
+    const docRef = doc(db, "configs", "mailer_settings");
+    await setDoc(docRef, settings, { merge: true });
+  } catch (error) {
+    console.error("Error updating mailer settings:", error);
     throw error;
   }
 };

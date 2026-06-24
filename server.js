@@ -625,9 +625,29 @@ async function generateSalesExcelBuffer(trendData, totals, selectedDate, anchorD
   return await workbook.xlsx.writeBuffer();
 }
 
-async function uploadToGoogleDrive(fileBuffer, fileName) {
+async function getMailerSettingsBackend() {
   try {
-    const authJson = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+    const { initializeApp } = await import('firebase/app');
+    const { getFirestore, doc, getDoc } = await import('firebase/firestore');
+    const firebaseApp = initializeApp(firebaseConfig);
+    const db = getFirestore(firebaseApp);
+    const docRef = doc(db, 'configs', 'mailer_settings');
+    const snapshot = await getDoc(docRef);
+    if (snapshot.exists()) {
+      return snapshot.data();
+    }
+    return null;
+  } catch (err) {
+    console.error("Failed to fetch mailer settings from Firestore on backend, fallback to env:", err.message);
+    return null;
+  }
+}
+
+async function uploadToGoogleDrive(fileBuffer, fileName, mailerSettings = null) {
+  try {
+    const authJson = mailerSettings?.googleServiceAccountKey || process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+    const folderId = mailerSettings?.googleDriveFolderId || process.env.GOOGLE_DRIVE_FOLDER_ID;
+
     if (!authJson) {
       console.warn("GOOGLE_SERVICE_ACCOUNT_KEY is not defined. Skipping Google Drive upload.");
       return null;
@@ -649,7 +669,7 @@ async function uploadToGoogleDrive(fileBuffer, fileName) {
     
     const fileMetadata = {
       name: fileName,
-      parents: process.env.GOOGLE_DRIVE_FOLDER_ID ? [process.env.GOOGLE_DRIVE_FOLDER_ID] : []
+      parents: folderId ? [folderId] : []
     };
 
     const media = {
@@ -671,12 +691,12 @@ async function uploadToGoogleDrive(fileBuffer, fileName) {
   }
 }
 
-async function sendEmailReport(fileBuffer, fileName, selectedDate) {
-  const host = process.env.SMTP_HOST;
-  const port = parseInt(process.env.SMTP_PORT || '587');
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
-  const recipients = process.env.REPORT_RECIPIENTS;
+async function sendEmailReport(fileBuffer, fileName, selectedDate, mailerSettings = null) {
+  const host = mailerSettings?.smtpHost || process.env.SMTP_HOST;
+  const port = parseInt(mailerSettings?.smtpPort || process.env.SMTP_PORT || '587');
+  const user = mailerSettings?.smtpUser || process.env.SMTP_USER;
+  const pass = mailerSettings?.smtpPass || process.env.SMTP_PASS;
+  const recipients = mailerSettings?.reportRecipients || process.env.REPORT_RECIPIENTS;
 
   if (!host || !user || !pass || !recipients) {
     console.warn("SMTP configuration or REPORT_RECIPIENTS is missing. Skipping email send.");
@@ -694,10 +714,10 @@ async function sendEmailReport(fileBuffer, fileName, selectedDate) {
   });
 
   const mailOptions = {
-    from: `"Linga Covers Tracker" <${user}>`,
+    from: `"Linga Reports" <${user}>`,
     to: recipients,
-    subject: `Daily Cover Tracker Report - ${selectedDate}`,
-    text: `Hello,\n\nPlease find attached the Consolidated Cover Tracker Report for ${selectedDate}.\n\nThis is an automated system message.`,
+    subject: `Consolidated Report - ${selectedDate}`,
+    text: `Hello,\n\nPlease find attached the Consolidated Report for ${selectedDate}.\n\nThis is an automated system message.`,
     attachments: [
       {
         filename: fileName,
@@ -719,6 +739,8 @@ app.post('/api/v1/reports/email-cover-tracker', async (req, res) => {
             return res.status(400).json({ error: "Missing required fields: selectedDate, trendData, or totals." });
         }
 
+        const mailerSettings = await getMailerSettingsBackend();
+
         // Calculate the anchor dates based on selectedDate
         const today = new Date(selectedDate);
         const lastWk = new Date(today);
@@ -737,7 +759,7 @@ app.post('/api/v1/reports/email-cover-tracker', async (req, res) => {
         let driveResult = null;
         let driveError = null;
         try {
-            driveResult = await uploadToGoogleDrive(excelBuffer, fileName);
+            driveResult = await uploadToGoogleDrive(excelBuffer, fileName, mailerSettings);
         } catch (err) {
             console.error("[Backend] Google Drive Upload Failed:", err.message);
             driveError = err.message;
@@ -747,7 +769,7 @@ app.post('/api/v1/reports/email-cover-tracker', async (req, res) => {
         let emailResult = false;
         let emailError = null;
         try {
-            emailResult = await sendEmailReport(excelBuffer, fileName, selectedDate);
+            emailResult = await sendEmailReport(excelBuffer, fileName, selectedDate, mailerSettings);
         } catch (err) {
             console.error("[Backend] Email Send Failed:", err.message);
             emailError = err.message;
@@ -784,6 +806,8 @@ app.post('/api/v1/reports/email-sales-tracker', async (req, res) => {
             return res.status(400).json({ error: "Missing required fields: selectedDate, trendData, or totals." });
         }
 
+        const mailerSettings = await getMailerSettingsBackend();
+
         const today = new Date(selectedDate);
         const lastWk = new Date(today);
         lastWk.setDate(today.getDate() - 7);
@@ -801,49 +825,17 @@ app.post('/api/v1/reports/email-sales-tracker', async (req, res) => {
         let driveResult = null;
         let driveError = null;
         try {
-            driveResult = await uploadToGoogleDrive(excelBuffer, fileName);
+            driveResult = await uploadToGoogleDrive(excelBuffer, fileName, mailerSettings);
         } catch (err) {
             console.error("[Backend] Google Drive Upload Failed:", err.message);
             driveError = err.message;
         }
 
-        // 3. Email report (Using the same email sending helper but with customized subject)
+        // 3. Email report
         let emailResult = false;
         let emailError = null;
         try {
-            const host = process.env.SMTP_HOST;
-            const port = parseInt(process.env.SMTP_PORT || '587');
-            const user = process.env.SMTP_USER;
-            const pass = process.env.SMTP_PASS;
-            const recipients = process.env.REPORT_RECIPIENTS;
-
-            if (!host || !user || !pass || !recipients) {
-                console.warn("SMTP configuration or REPORT_RECIPIENTS is missing. Skipping email send.");
-            } else {
-                const transporter = nodemailer.createTransport({
-                    host,
-                    port,
-                    secure: port === 465,
-                    auth: { user, pass }
-                });
-
-                const mailOptions = {
-                    from: `"Linga Sales Tracker" <${user}>`,
-                    to: recipients,
-                    subject: `Daily Sales Tracker Report - ${selectedDate}`,
-                    text: `Hello,\n\nPlease find attached the Consolidated Sales Tracker Report for ${selectedDate}.\n\nThis is an automated system message.`,
-                    attachments: [
-                        {
-                            filename: fileName,
-                            content: excelBuffer
-                        }
-                    ]
-                };
-
-                const info = await transporter.sendMail(mailOptions);
-                console.log("Sales Email sent successfully:", info.messageId);
-                emailResult = true;
-            }
+            emailResult = await sendEmailReport(excelBuffer, fileName, selectedDate, mailerSettings);
         } catch (err) {
             console.error("[Backend] Sales Email Send Failed:", err.message);
             emailError = err.message;
@@ -885,6 +877,7 @@ app.get('/api/v1/cron/daily-cover-tracker', async (req, res) => {
     try {
         // 2. Fetch automation settings
         const settings = await getAutomationSettingsBackend();
+        const mailerSettings = await getMailerSettingsBackend();
 
         // 3. Check enabled/disabled state
         if (!settings.enabled) {
@@ -965,7 +958,7 @@ app.get('/api/v1/cron/daily-cover-tracker', async (req, res) => {
         // 7. Upload to Google Drive
         let driveResult = null;
         try {
-            driveResult = await uploadToGoogleDrive(excelBuffer, fileName);
+            driveResult = await uploadToGoogleDrive(excelBuffer, fileName, mailerSettings);
         } catch (err) {
             console.error("[Cron] Google Drive Upload Failed:", err.message);
         }
@@ -973,7 +966,7 @@ app.get('/api/v1/cron/daily-cover-tracker', async (req, res) => {
         // 8. Email report
         let emailResult = false;
         try {
-            emailResult = await sendEmailReport(excelBuffer, fileName, selectedDate);
+            emailResult = await sendEmailReport(excelBuffer, fileName, selectedDate, mailerSettings);
         } catch (err) {
             console.error("[Cron] Email Send Failed:", err.message);
         }

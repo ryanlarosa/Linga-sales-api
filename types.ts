@@ -117,3 +117,13 @@ export interface AutomationSettings {
   enabled: boolean;
   fetchTime: string; // e.g. "08:00"
 }
+
+export interface MailerSettings {
+  smtpHost?: string;
+  smtpPort?: string;
+  smtpUser?: string;
+  smtpPass?: string;
+  reportRecipients?: string;
+  googleDriveFolderId?: string;
+  googleServiceAccountKey?: string;
+}

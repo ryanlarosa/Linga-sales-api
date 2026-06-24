@@ -10,14 +10,17 @@ import {
   updateUser,
   getAutomationSettings,
   updateAutomationSettings,
+  getMailerSettings,
+  updateMailerSettings,
 } from "../../services/firestoreService";
+import { MailerSettings } from "../../types";
 
 interface SettingsModuleProps {
   currentUser: User;
 }
 
 const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
-  const [tab, setTab] = useState<"STORES" | "USERS" | "AUTOMATION">("STORES");
+  const [tab, setTab] = useState<"STORES" | "USERS" | "AUTOMATION" | "MAILER">("STORES");
   const [stores, setStores] = useState<Store[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
@@ -25,6 +28,17 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
   
   // Automation settings state
   const [autoSettings, setAutoSettings] = useState({ enabled: true, fetchTime: "08:00" });
+
+  // Mailer settings state
+  const [mailerSettings, setMailerSettings] = useState<MailerSettings>({
+    smtpHost: "",
+    smtpPort: "587",
+    smtpUser: "",
+    smtpPass: "",
+    reportRecipients: "",
+    googleDriveFolderId: "",
+    googleServiceAccountKey: "",
+  });
 
   // Store Form State
   const [newStore, setNewStore] = useState({ id: "", name: "" });
@@ -45,14 +59,18 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [s, u, auto] = await Promise.all([
+      const [s, u, auto, mailer] = await Promise.all([
         getStores(),
         getUsers(),
-        getAutomationSettings()
+        getAutomationSettings(),
+        getMailerSettings()
       ]);
       setStores(s || []);
       setUsers(u || []);
       setAutoSettings(auto || { enabled: true, fetchTime: "08:00" });
+      if (mailer) {
+        setMailerSettings(mailer);
+      }
     } catch (err) {
       console.error("Failed to fetch settings data", err);
     } finally {
@@ -73,6 +91,21 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
       fetchData();
     } catch (err) {
       setMsg("Failed to save automation settings");
+    } finally {
+      setLoading(false);
+      setTimeout(() => setMsg(""), 3000);
+    }
+  };
+
+  const handleMailerSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      await updateMailerSettings(mailerSettings);
+      setMsg("Mailer configurations saved successfully");
+      fetchData();
+    } catch (err) {
+      setMsg("Failed to save mailer configurations");
     } finally {
       setLoading(false);
       setTimeout(() => setMsg(""), 3000);
@@ -208,6 +241,15 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
         >
           Report Automation
         </button>
+        <button
+          onClick={() => {
+            setTab("MAILER");
+            resetUserForm();
+          }}
+          className={`px-4 py-2 text-sm font-bold border-b-2 transition-all whitespace-nowrap ${tab === "MAILER" ? "border-rose-600 text-rose-600 dark:text-rose-400" : "text-slate-400"}`}
+        >
+          Mailer Setup
+        </button>
       </div>
 
       {msg && (
@@ -226,7 +268,9 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                   ? "New Store Location"
                   : tab === "USERS"
                     ? (isEditingUser ? `Modify Account: ${userForm.username}` : "New User Account")
-                    : "Configure Automation"}
+                    : tab === "AUTOMATION"
+                      ? "Configure Automation"
+                      : "Mailer Configurations"}
               </span>
               {tab === "USERS" && isEditingUser && (
                 <button
@@ -389,7 +433,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                       : "Register New User"}
                 </button>
               </form>
-            ) : (
+            ) : tab === "AUTOMATION" ? (
               <form onSubmit={handleAutomationSubmit} className="space-y-6 animate-fadeIn">
                 <div className="space-y-4">
                   <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl">
@@ -446,6 +490,100 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                   {loading ? "Processing..." : "Save Automation Settings"}
                 </button>
               </form>
+            ) : (
+              <form onSubmit={handleMailerSubmit} className="space-y-4 animate-fadeIn">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
+                    SMTP Host
+                  </label>
+                  <input
+                    value={mailerSettings.smtpHost || ""}
+                    onChange={(e) => setMailerSettings({ ...mailerSettings, smtpHost: e.target.value })}
+                    placeholder="e.g. smtp.hostinger.com"
+                    className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
+                  />
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="col-span-2 space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
+                      SMTP Sender Username
+                    </label>
+                    <input
+                      value={mailerSettings.smtpUser || ""}
+                      onChange={(e) => setMailerSettings({ ...mailerSettings, smtpUser: e.target.value })}
+                      placeholder="reports@yourdomain.com"
+                      className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
+                      Port
+                    </label>
+                    <input
+                      value={mailerSettings.smtpPort || ""}
+                      onChange={(e) => setMailerSettings({ ...mailerSettings, smtpPort: e.target.value })}
+                      placeholder="587"
+                      className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
+                    SMTP Password / App Password
+                  </label>
+                  <input
+                    type="password"
+                    value={mailerSettings.smtpPass || ""}
+                    onChange={(e) => setMailerSettings({ ...mailerSettings, smtpPass: e.target.value })}
+                    placeholder="••••••••••••••••"
+                    className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
+                    Recipients List (Comma-Separated)
+                  </label>
+                  <input
+                    value={mailerSettings.reportRecipients || ""}
+                    onChange={(e) => setMailerSettings({ ...mailerSettings, reportRecipients: e.target.value })}
+                    placeholder="boss@domain.com, accounts@domain.com"
+                    className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
+                  />
+                </div>
+                <div className="border-t border-slate-100 dark:border-slate-800 my-4 pt-4 space-y-4">
+                  <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400">Google Drive Upload (Optional)</h4>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
+                      Folder ID
+                    </label>
+                    <input
+                      value={mailerSettings.googleDriveFolderId || ""}
+                      onChange={(e) => setMailerSettings({ ...mailerSettings, googleDriveFolderId: e.target.value })}
+                      placeholder="Paste your Google Drive Folder ID"
+                      className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
+                      Service Account JSON Key
+                    </label>
+                    <textarea
+                      value={mailerSettings.googleServiceAccountKey || ""}
+                      onChange={(e) => setMailerSettings({ ...mailerSettings, googleServiceAccountKey: e.target.value })}
+                      placeholder='{"type": "service_account", ...}'
+                      rows={4}
+                      className="w-full p-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-mono dark:text-white focus:ring-2 ring-rose-500/20 outline-none resize-none"
+                    />
+                  </div>
+                </div>
+                <button
+                  disabled={loading}
+                  type="submit"
+                  className="w-full py-3.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-rose-600/20 transition-all cursor-pointer"
+                >
+                  {loading ? "Processing..." : "Save Mailer Settings"}
+                </button>
+              </form>
             )}
           </div>
         </div>
@@ -484,28 +622,50 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                       3
                     </div>
                     <div>
-                      <h4 className="font-bold text-slate-800 dark:text-slate-200 text-sm">Required Environment Configuration</h4>
+                      <h4 className="font-bold text-slate-800 dark:text-slate-200 text-sm">Required Configuration</h4>
                       <p className="mt-1 text-xs leading-relaxed">
-                        The email distribution and file storage services require key variables to be set in your server's environment:
+                        To enable automated reporting distributions and backup saves, please navigate to the <strong>Mailer Setup</strong> tab and input your SMTP credentials and Google Service Account Key.
                       </p>
-                      <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] font-mono bg-slate-50 dark:bg-slate-950 p-3 rounded-xl border border-slate-200 dark:border-slate-800">
-                        <div>
-                          <span className="text-rose-600 dark:text-rose-400 font-bold">GOOGLE_DRIVE_FOLDER_ID</span>
-                          <span className="block text-[10px] text-slate-400">Target Drive directory</span>
-                        </div>
-                        <div>
-                          <span className="text-rose-600 dark:text-rose-400 font-bold">SMTP_HOST & SMTP_PORT</span>
-                          <span className="block text-[10px] text-slate-400">Email server parameters</span>
-                        </div>
-                        <div className="md:col-span-2">
-                          <span className="text-rose-600 dark:text-rose-400 font-bold">GOOGLE_SERVICE_ACCOUNT_KEY</span>
-                          <span className="block text-[10px] text-slate-400">JSON key credentials for Drive write access</span>
-                        </div>
-                        <div className="md:col-span-2">
-                          <span className="text-rose-600 dark:text-rose-400 font-bold">REPORT_RECIPIENTS</span>
-                          <span className="block text-[10px] text-slate-400">Recipient emails (comma-separated)</span>
-                        </div>
-                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : tab === "MAILER" ? (
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-6 transition-colors h-full flex flex-col justify-between">
+              <div className="space-y-6">
+                <h3 className="text-xs font-bold uppercase text-slate-400 tracking-wider">
+                  How Mailer Setup Works
+                </h3>
+                
+                <div className="space-y-5 text-sm text-slate-600 dark:text-slate-400">
+                  <div className="flex gap-4 items-start">
+                    <div className="p-2.5 bg-rose-50 dark:bg-rose-900/20 rounded-xl text-rose-600 dark:text-rose-400 font-bold shrink-0 text-xs">
+                      1
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-800 dark:text-slate-200 text-sm">SMTP Server Integration</h4>
+                      <p className="mt-1 text-xs leading-relaxed">Enter your SMTP server host, port (commonly 587 for TLS or 465 for SSL), email address, and password. If you use Gmail/Outlook, remember to generate and use an <strong>App Password</strong> rather than your personal password.</p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4 items-start">
+                    <div className="p-2.5 bg-rose-50 dark:bg-rose-900/20 rounded-xl text-rose-600 dark:text-rose-400 font-bold shrink-0 text-xs">
+                      2
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-800 dark:text-slate-200 text-sm">Automated and Manual Recipients</h4>
+                      <p className="mt-1 text-xs leading-relaxed">Specify a comma-separated list of emails (e.g. <code>manager@brand.com, finance@brand.com</code>) to receive the Excel summaries. These recipients will be used when you click "Email & Save to Drive" in the tracker modules as well as during automated daily runs.</p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4 items-start">
+                    <div className="p-2.5 bg-rose-50 dark:bg-rose-900/20 rounded-xl text-rose-600 dark:text-rose-400 font-bold shrink-0 text-xs">
+                      3
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-800 dark:text-slate-200 text-sm">Google Drive Permissions</h4>
+                      <p className="mt-1 text-xs leading-relaxed">If utilizing Google Drive storage, enter the Folder ID and paste the entire JSON content of your Google Cloud Service Account credentials key. Be sure to share the Google Drive folder with the Service Account email address as an <strong>Editor</strong>.</p>
                     </div>
                   </div>
                 </div>
