@@ -1,6 +1,6 @@
 import { db } from "./firebase";
-import { collection, getDocs, query, where, doc, setDoc, deleteDoc, updateDoc, QueryDocumentSnapshot, DocumentData, getDoc } from "firebase/firestore";
-import { User, Store, AutomationSettings, MailerSettings } from "../types";
+import { collection, getDocs, query, where, doc, setDoc, deleteDoc, updateDoc, QueryDocumentSnapshot, DocumentData, getDoc, orderBy } from "firebase/firestore";
+import { User, Store, AutomationSettings, MailerSettings, ReportLog } from "../types";
 import { MOCK_USERS, STORE_LIST } from "../constants";
 
 // Helper to check if error is due to missing DB setup in Console
@@ -252,6 +252,31 @@ export const updateMailerSettings = async (settings: MailerSettings): Promise<vo
     await setDoc(docRef, settings, { merge: true });
   } catch (error) {
     console.error("Error updating mailer settings:", error);
+    throw error;
+  }
+};
+
+export const getReportLogs = async (): Promise<ReportLog[]> => {
+  try {
+    const logsRef = collection(db, "report_logs");
+    const q = query(logsRef, orderBy("timestamp", "desc"));
+    const snapshot = await getDocs(q);
+    const logs: ReportLog[] = [];
+    snapshot.forEach((doc: QueryDocumentSnapshot<DocumentData>) => {
+      logs.push(doc.data() as ReportLog);
+    });
+    return logs;
+  } catch (error) {
+    console.error("Error getting report logs:", error);
+    return [];
+  }
+};
+
+export const addReportLog = async (log: ReportLog): Promise<void> => {
+  try {
+    await setDoc(doc(db, "report_logs", log.id), log);
+  } catch (error) {
+    console.error("Error adding report log:", error);
     throw error;
   }
 };

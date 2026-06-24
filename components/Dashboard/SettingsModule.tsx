@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { User, Store } from "../../types";
+import { User, Store, MailerSettings, ReportLog } from "../../types";
 import {
   getStores,
   getUsers,
@@ -12,17 +12,18 @@ import {
   updateAutomationSettings,
   getMailerSettings,
   updateMailerSettings,
+  getReportLogs,
 } from "../../services/firestoreService";
-import { MailerSettings } from "../../types";
 
 interface SettingsModuleProps {
   currentUser: User;
 }
 
 const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
-  const [tab, setTab] = useState<"STORES" | "USERS" | "AUTOMATION" | "MAILER">("STORES");
+  const [tab, setTab] = useState<"STORES" | "USERS" | "AUTOMATION" | "MAILER" | "LOGS">("STORES");
   const [stores, setStores] = useState<Store[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [reportLogs, setReportLogs] = useState<ReportLog[]>([]);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
   
@@ -38,6 +39,8 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
     reportRecipients: "",
     googleDriveFolderId: "",
     googleServiceAccountKey: "",
+    emailSubjectTemplate: "{type} Report - {date}",
+    emailBodyTemplate: "Hello,\n\nPlease find attached the Consolidated {type} Report for {date}.\n\nThis is an automated system message.",
   });
 
   // Store Form State
@@ -59,17 +62,23 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [s, u, auto, mailer] = await Promise.all([
+      const [s, u, auto, mailer, logs] = await Promise.all([
         getStores(),
         getUsers(),
         getAutomationSettings(),
-        getMailerSettings()
+        getMailerSettings(),
+        getReportLogs(),
       ]);
       setStores(s || []);
       setUsers(u || []);
       setAutoSettings(auto || { enabled: true, fetchTime: "08:00" });
+      setReportLogs(logs || []);
       if (mailer) {
-        setMailerSettings(mailer);
+        setMailerSettings({
+          emailSubjectTemplate: "{type} Report - {date}",
+          emailBodyTemplate: "Hello,\n\nPlease find attached the Consolidated {type} Report for {date}.\n\nThis is an automated system message.",
+          ...mailer
+        });
       }
     } catch (err) {
       console.error("Failed to fetch settings data", err);
@@ -250,6 +259,15 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
         >
           Mailer Setup
         </button>
+        <button
+          onClick={() => {
+            setTab("LOGS");
+            resetUserForm();
+          }}
+          className={`px-4 py-2 text-sm font-bold border-b-2 transition-all whitespace-nowrap ${tab === "LOGS" ? "border-rose-600 text-rose-600 dark:text-rose-400" : "text-slate-400"}`}
+        >
+          Logs History
+        </button>
       </div>
 
       {msg && (
@@ -270,7 +288,9 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                     ? (isEditingUser ? `Modify Account: ${userForm.username}` : "New User Account")
                     : tab === "AUTOMATION"
                       ? "Configure Automation"
-                      : "Mailer Configurations"}
+                      : tab === "MAILER"
+                        ? "Mailer Configurations"
+                        : "Execution Summary"}
               </span>
               {tab === "USERS" && isEditingUser && (
                 <button
@@ -490,7 +510,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                   {loading ? "Processing..." : "Save Automation Settings"}
                 </button>
               </form>
-            ) : (
+            ) : tab === "MAILER" ? (
               <form onSubmit={handleMailerSubmit} className="space-y-4 animate-fadeIn">
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
@@ -541,6 +561,31 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
+                    Email Subject Template
+                  </label>
+                  <input
+                    value={mailerSettings.emailSubjectTemplate || ""}
+                    onChange={(e) => setMailerSettings({ ...mailerSettings, emailSubjectTemplate: e.target.value })}
+                    placeholder="e.g. {type} Report - {date}"
+                    className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
+                  />
+                  <p className="text-[10px] text-slate-400 ml-1">Supported placeholders: <code>{`{type}`}</code>, <code>{`{date}`}</code></p>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
+                    Email Body Template
+                  </label>
+                  <textarea
+                    value={mailerSettings.emailBodyTemplate || ""}
+                    onChange={(e) => setMailerSettings({ ...mailerSettings, emailBodyTemplate: e.target.value })}
+                    placeholder="Hello, please find attached the report..."
+                    rows={4}
+                    className="w-full p-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none resize-none"
+                  />
+                  <p className="text-[10px] text-slate-400 ml-1">Supported placeholders: <code>{`{type}`}</code>, <code>{`{date}`}</code></p>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
                     Recipients List (Comma-Separated)
                   </label>
                   <input
@@ -584,6 +629,41 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                   {loading ? "Processing..." : "Save Mailer Settings"}
                 </button>
               </form>
+            ) : (
+              <div className="space-y-6 animate-fadeIn text-sm">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+                    <p className="text-[10px] uppercase font-bold text-slate-400">Total Executions</p>
+                    <p className="text-2xl font-bold mt-1 text-slate-800 dark:text-slate-200">{reportLogs.length}</p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+                    <p className="text-[10px] uppercase font-bold text-slate-400">Successful Runs</p>
+                    <p className="text-2xl font-bold mt-1 text-emerald-600 dark:text-emerald-400">
+                      {reportLogs.filter(l => l.status === "SUCCESS").length}
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+                    <p className="text-[10px] uppercase font-bold text-slate-400">Failed Runs</p>
+                    <p className="text-2xl font-bold mt-1 text-rose-600 dark:text-rose-400">
+                      {reportLogs.filter(l => l.status === "FAILED").length}
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+                    <p className="text-[10px] uppercase font-bold text-slate-400">Success Rate</p>
+                    <p className="text-2xl font-bold mt-1 text-slate-800 dark:text-slate-200">
+                      {reportLogs.length > 0
+                        ? `${Math.round((reportLogs.filter(l => l.status === "SUCCESS").length / reportLogs.length) * 100)}%`
+                        : "0%"}
+                    </p>
+                  </div>
+                </div>
+                <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2">
+                  <p className="text-[10px] uppercase font-bold text-slate-400">Last Execution Timestamp</p>
+                  <p className="text-sm font-semibold dark:text-slate-300">
+                    {reportLogs[0] ? new Date(reportLogs[0].timestamp).toLocaleString() : "No runs logged yet."}
+                  </p>
+                </div>
+              </div>
             )}
           </div>
         </div>
@@ -669,6 +749,104 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                     </div>
                   </div>
                 </div>
+              </div>
+            </div>
+          ) : tab === "LOGS" ? (
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm transition-colors h-full flex flex-col">
+              <div className="px-6 py-4 bg-slate-50 dark:bg-slate-950 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
+                <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em]">
+                  Report Execution History
+                </h3>
+                <button
+                  onClick={fetchData}
+                  className="text-xs text-rose-600 hover:text-rose-700 font-bold transition-all"
+                >
+                  Refresh Logs
+                </button>
+              </div>
+              <div className="overflow-auto flex-1 custom-scrollbar">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-50 dark:bg-slate-950 text-slate-400 uppercase text-[10px] font-bold sticky top-0 z-10">
+                    <tr>
+                      <th className="px-6 py-4">Run Details</th>
+                      <th className="px-6 py-4">Status & Destination</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {reportLogs.map((log) => (
+                      <tr
+                        key={log.id}
+                        className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group"
+                      >
+                        <td className="px-6 py-4 space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-800 dark:text-slate-200">
+                              {log.reportType} Tracker
+                            </span>
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-black uppercase tracking-wider ${
+                              log.type === "Automated"
+                                ? "bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400"
+                                : "bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
+                            }`}>
+                              {log.type}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-slate-400">
+                            Data Date: <strong className="font-semibold">{log.reportDate}</strong>
+                          </p>
+                          <p className="text-[10px] text-slate-400">
+                            Run at: {new Date(log.timestamp).toLocaleString()}
+                          </p>
+                        </td>
+                        <td className="px-6 py-4 space-y-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
+                              log.status === "SUCCESS"
+                                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400"
+                                : "bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400"
+                            }`}>
+                              {log.status}
+                            </span>
+                          </div>
+                          {log.status === "SUCCESS" ? (
+                            <div className="text-[10px] space-y-0.5">
+                              <p className="text-slate-400 truncate max-w-[200px]" title={log.recipients}>
+                                To: <span className="text-slate-600 dark:text-slate-300 font-medium">{log.recipients}</span>
+                              </p>
+                              {log.driveLink && (
+                                <a
+                                  href={log.driveLink}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-rose-600 dark:text-rose-400 hover:underline font-bold inline-flex items-center gap-0.5"
+                                >
+                                  Google Drive File
+                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                  </svg>
+                                </a>
+                              )}
+                            </div>
+                          ) : (
+                            <p className="text-[10px] text-rose-600 dark:text-rose-400 font-mono line-clamp-2 max-w-[250px]" title={log.errorMsg || ""}>
+                              {log.errorMsg}
+                            </p>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                    {reportLogs.length === 0 && (
+                      <tr>
+                        <td
+                          colSpan={2}
+                          className="px-6 py-12 text-center text-slate-400 italic"
+                        >
+                          No execution logs found.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
           ) : (

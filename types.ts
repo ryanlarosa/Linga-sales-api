@@ -126,4 +126,18 @@ export interface MailerSettings {
   reportRecipients?: string;
   googleDriveFolderId?: string;
   googleServiceAccountKey?: string;
+  emailSubjectTemplate?: string;
+  emailBodyTemplate?: string;
+}
+
+export interface ReportLog {
+  id: string;
+  timestamp: string;
+  type: "Manual" | "Automated";
+  reportType: "Covers" | "Sales";
+  reportDate: string;
+  status: "SUCCESS" | "FAILED";
+  recipients: string;
+  driveLink: string | null;
+  errorMsg: string | null;
 }

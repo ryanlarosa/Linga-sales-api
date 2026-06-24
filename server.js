@@ -644,7 +644,43 @@ async function getMailerSettingsBackend() {
   }
 }
 
-async function uploadToGoogleDrive(fileBuffer, fileName, mailerSettings = null) {
+async function getOrCreateSubfolder(drive, parentId, folderName) {
+  try {
+    let query = `mimeType = 'application/vnd.google-apps.folder' and name = '${folderName}' and trashed = false`;
+    if (parentId) {
+      query += ` and '${parentId}' in parents`;
+    }
+    const response = await drive.files.list({
+      q: query,
+      fields: 'files(id, name)',
+      spaces: 'drive'
+    });
+
+    const files = response.data.files;
+    if (files && files.length > 0) {
+      return files[0].id;
+    }
+
+    const fileMetadata = {
+      name: folderName,
+      mimeType: 'application/vnd.google-apps.folder',
+      parents: parentId ? [parentId] : []
+    };
+
+    const folder = await drive.files.create({
+      requestBody: fileMetadata,
+      fields: 'id'
+    });
+
+    console.log(`Created subfolder '${folderName}' with ID: ${folder.data.id}`);
+    return folder.data.id;
+  } catch (error) {
+    console.error(`Failed to get/create subfolder '${folderName}':`, error);
+    throw error;
+  }
+}
+
+async function uploadToGoogleDrive(fileBuffer, fileName, mailerSettings = null, selectedDate = null) {
   try {
     const authJson = mailerSettings?.googleServiceAccountKey || process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
     const folderId = mailerSettings?.googleDriveFolderId || process.env.GOOGLE_DRIVE_FOLDER_ID;
@@ -667,10 +703,28 @@ async function uploadToGoogleDrive(fileBuffer, fileName, mailerSettings = null) 
     });
 
     const drive = google.drive({ version: 'v3', auth });
+
+    let currentParentId = folderId || null;
+    if (currentParentId) {
+      let dateObj = new Date();
+      if (selectedDate) {
+        const parsedDate = new Date(selectedDate);
+        if (!isNaN(parsedDate.getTime())) {
+          dateObj = parsedDate;
+        }
+      }
+      const yearStr = String(dateObj.getFullYear());
+      const monthIndex = dateObj.getMonth();
+      const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+      const monthStr = `${String(monthIndex + 1).padStart(2, '0')}-${months[monthIndex]}`;
+
+      currentParentId = await getOrCreateSubfolder(drive, currentParentId, yearStr);
+      currentParentId = await getOrCreateSubfolder(drive, currentParentId, monthStr);
+    }
     
     const fileMetadata = {
       name: fileName,
-      parents: folderId ? [folderId] : []
+      parents: currentParentId ? [currentParentId] : []
     };
 
     const media = {
@@ -692,7 +746,7 @@ async function uploadToGoogleDrive(fileBuffer, fileName, mailerSettings = null) 
   }
 }
 
-async function sendEmailReport(fileBuffer, fileName, selectedDate, mailerSettings = null) {
+async function sendEmailReport(fileBuffer, fileName, selectedDate, mailerSettings = null, reportType = "Covers") {
   const host = mailerSettings?.smtpHost || process.env.SMTP_HOST;
   const port = parseInt(mailerSettings?.smtpPort || process.env.SMTP_PORT || '587');
   const user = mailerSettings?.smtpUser || process.env.SMTP_USER;
@@ -714,11 +768,25 @@ async function sendEmailReport(fileBuffer, fileName, selectedDate, mailerSetting
     }
   });
 
+  const subjectTemplate = mailerSettings?.emailSubjectTemplate || "{type} Report - {date}";
+  const bodyTemplate = mailerSettings?.emailBodyTemplate || "Hello,\n\nPlease find attached the Consolidated {type} Report for {date}.\n\nThis is an automated system message.";
+
+  const typePlaceholder = reportType;
+  const datePlaceholder = selectedDate;
+
+  const interpolatedSubject = subjectTemplate
+    .replace(/{type}/gi, typePlaceholder)
+    .replace(/{date}/gi, datePlaceholder);
+  
+  const interpolatedBody = bodyTemplate
+    .replace(/{type}/gi, typePlaceholder)
+    .replace(/{date}/gi, datePlaceholder);
+
   const mailOptions = {
     from: `"Linga Reports" <${user}>`,
     to: recipients,
-    subject: `Consolidated Report - ${selectedDate}`,
-    text: `Hello,\n\nPlease find attached the Consolidated Report for ${selectedDate}.\n\nThis is an automated system message.`,
+    subject: interpolatedSubject,
+    text: interpolatedBody,
     attachments: [
       {
         filename: fileName,
@@ -730,6 +798,33 @@ async function sendEmailReport(fileBuffer, fileName, selectedDate, mailerSetting
   const info = await transporter.sendMail(mailOptions);
   console.log("Email sent successfully:", info.messageId);
   return true;
+}
+
+async function writeReportLogBackend({ type, reportType, reportDate, status, recipients, driveLink, errorMsg }) {
+  try {
+    const { initializeApp } = await import('firebase/app');
+    const { getFirestore, doc, setDoc } = await import('firebase/firestore');
+    const firebaseApp = initializeApp(firebaseConfig);
+    const db = getFirestore(firebaseApp);
+    
+    const id = `${reportType.toLowerCase()}_${type.toLowerCase()}_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    const log = {
+      id,
+      timestamp: new Date().toISOString(),
+      type,
+      reportType,
+      reportDate,
+      status,
+      recipients: recipients || "",
+      driveLink: driveLink || null,
+      errorMsg: errorMsg || null
+    };
+
+    await setDoc(doc(db, "report_logs", id), log);
+    console.log(`[Firestore Log] Recorded ${status} log for ${reportType} run (${type}) on ${reportDate}`);
+  } catch (err) {
+    console.error("Failed to write report log to Firestore:", err.message);
+  }
 }
 
 // --- Email and Drive Report Route (Manual UI Trigger) ---
@@ -760,7 +855,7 @@ app.post('/api/v1/reports/email-cover-tracker', async (req, res) => {
         let driveResult = null;
         let driveError = null;
         try {
-            driveResult = await uploadToGoogleDrive(excelBuffer, fileName, mailerSettings);
+            driveResult = await uploadToGoogleDrive(excelBuffer, fileName, mailerSettings, selectedDate);
         } catch (err) {
             console.error("[Backend] Google Drive Upload Failed:", err.message);
             driveError = err.message;
@@ -770,11 +865,27 @@ app.post('/api/v1/reports/email-cover-tracker', async (req, res) => {
         let emailResult = false;
         let emailError = null;
         try {
-            emailResult = await sendEmailReport(excelBuffer, fileName, selectedDate, mailerSettings);
+            emailResult = await sendEmailReport(excelBuffer, fileName, selectedDate, mailerSettings, "Covers");
         } catch (err) {
             console.error("[Backend] Email Send Failed:", err.message);
             emailError = err.message;
         }
+
+        const runStatus = (emailResult || driveResult) ? "SUCCESS" : "FAILED";
+        const runRecipients = mailerSettings?.reportRecipients || process.env.REPORT_RECIPIENTS || "";
+        const runErrorMsg = (!emailResult && !driveResult) 
+          ? `Email error: ${emailError || 'unknown'}, Drive error: ${driveError || 'unknown'}`
+          : (emailError || driveError || null);
+
+        await writeReportLogBackend({
+            type: "Manual",
+            reportType: "Covers",
+            reportDate: selectedDate,
+            status: runStatus,
+            recipients: runRecipients,
+            driveLink: driveResult?.webViewLink || null,
+            errorMsg: runErrorMsg
+        });
 
         if (!emailResult && !driveResult) {
             return res.status(500).json({
@@ -826,7 +937,7 @@ app.post('/api/v1/reports/email-sales-tracker', async (req, res) => {
         let driveResult = null;
         let driveError = null;
         try {
-            driveResult = await uploadToGoogleDrive(excelBuffer, fileName, mailerSettings);
+            driveResult = await uploadToGoogleDrive(excelBuffer, fileName, mailerSettings, selectedDate);
         } catch (err) {
             console.error("[Backend] Google Drive Upload Failed:", err.message);
             driveError = err.message;
@@ -836,11 +947,27 @@ app.post('/api/v1/reports/email-sales-tracker', async (req, res) => {
         let emailResult = false;
         let emailError = null;
         try {
-            emailResult = await sendEmailReport(excelBuffer, fileName, selectedDate, mailerSettings);
+            emailResult = await sendEmailReport(excelBuffer, fileName, selectedDate, mailerSettings, "Sales");
         } catch (err) {
             console.error("[Backend] Sales Email Send Failed:", err.message);
             emailError = err.message;
         }
+
+        const runStatus = (emailResult || driveResult) ? "SUCCESS" : "FAILED";
+        const runRecipients = mailerSettings?.reportRecipients || process.env.REPORT_RECIPIENTS || "";
+        const runErrorMsg = (!emailResult && !driveResult) 
+          ? `Email error: ${emailError || 'unknown'}, Drive error: ${driveError || 'unknown'}`
+          : (emailError || driveError || null);
+
+        await writeReportLogBackend({
+            type: "Manual",
+            reportType: "Sales",
+            reportDate: selectedDate,
+            status: runStatus,
+            recipients: runRecipients,
+            driveLink: driveResult?.webViewLink || null,
+            errorMsg: runErrorMsg
+        });
 
         if (!emailResult && !driveResult) {
             return res.status(500).json({
@@ -958,19 +1085,39 @@ app.get('/api/v1/cron/daily-cover-tracker', async (req, res) => {
 
         // 7. Upload to Google Drive
         let driveResult = null;
+        let driveError = null;
         try {
-            driveResult = await uploadToGoogleDrive(excelBuffer, fileName, mailerSettings);
+            driveResult = await uploadToGoogleDrive(excelBuffer, fileName, mailerSettings, selectedDate);
         } catch (err) {
             console.error("[Cron] Google Drive Upload Failed:", err.message);
+            driveError = err.message;
         }
 
         // 8. Email report
         let emailResult = false;
+        let emailError = null;
         try {
-            emailResult = await sendEmailReport(excelBuffer, fileName, selectedDate, mailerSettings);
+            emailResult = await sendEmailReport(excelBuffer, fileName, selectedDate, mailerSettings, "Covers");
         } catch (err) {
             console.error("[Cron] Email Send Failed:", err.message);
+            emailError = err.message;
         }
+
+        const runStatus = (emailResult || driveResult) ? "SUCCESS" : "FAILED";
+        const runRecipients = mailerSettings?.reportRecipients || process.env.REPORT_RECIPIENTS || "";
+        const runErrorMsg = (!emailResult && !driveResult) 
+          ? `Email error: ${emailError || 'unknown'}, Drive error: ${driveError || 'unknown'}`
+          : (emailError || driveError || null);
+
+        await writeReportLogBackend({
+            type: "Automated",
+            reportType: "Covers",
+            reportDate: selectedDate,
+            status: runStatus,
+            recipients: runRecipients,
+            driveLink: driveResult?.webViewLink || null,
+            errorMsg: runErrorMsg
+        });
 
         res.json({
             success: true,
