@@ -382,12 +382,16 @@ export const fetchStoreTrendSummary = async (
               dailyCovers += sale.guestCount || 0;
               dailyNet += netSales;
               dailySalesList.push({
-                ...sale,
-                netSalesVal: netSales,
-                discountVal: discounts,
-                taxVal: parseApiFloat(summary?.totalTaxAmount || sale.totalTaxAmountStr),
+                ticketNo: sale.ticketNo,
+                customerName: sale.customerName || 'Walk-in Guest',
+                saleOpenTime: sale.saleOpenTime,
                 floorNo: summary?.floorNo || 'Unknown',
-                tableNo: summary?.tableNo || 'Unknown'
+                tableNo: summary?.tableNo || 'Unknown',
+                netSalesVal: netSales,
+                taxVal: parseApiFloat(summary?.totalTaxAmount || sale.totalTaxAmountStr),
+                discountVal: discounts,
+                grossReceiptStr: sale.grossReceiptStr,
+                guestCount: sale.guestCount
               });
             }
           });
