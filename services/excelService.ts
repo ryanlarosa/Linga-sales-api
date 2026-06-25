@@ -554,7 +554,13 @@ export const exportTrendToExcel = async (trendData: any[], totals: any, anchorDa
   window.URL.revokeObjectURL(url);
 };
 
-export const exportSalesTrendToExcel = async (trendData: any[], totals: any, anchorDate: string, anchorDates: Date[]) => {
+export const exportSalesTrendToExcel = async (
+  trendData: any[],
+  totals: any,
+  anchorDate: string,
+  anchorDates: Date[],
+  discountsData: any[] = []
+) => {
   if (!trendData || trendData.length === 0) return;
 
   const workbook = new ExcelJS.Workbook();
@@ -791,6 +797,81 @@ export const exportSalesTrendToExcel = async (trendData: any[], totals: any, anc
       saleRow.getCell(11).numFmt = '#,##0';
       saleRow.getCell(11).alignment = { horizontal: 'right' };
     });
+  });
+
+  // Add third sheet for Discount Summary
+  const discountSheet = workbook.addWorksheet('Discount Summary');
+  discountSheet.views = [{ showGridLines: true }];
+
+  discountSheet.columns = [
+    { header: 'Store', key: 'store', width: 25 },
+    { header: 'Approved By', key: 'approvedBy', width: 18 },
+    { header: 'Check/Ticket No', key: 'check', width: 14 },
+    { header: 'SaleDate', key: 'saleDate', width: 14 },
+    { header: 'Sale_Open_Time', key: 'saleOpenTime', width: 16 },
+    { header: 'Discount Amount', key: 'discountAmt', width: 16 },
+    { header: 'Applied By', key: 'appliedBy', width: 18 },
+    { header: 'Discount Coupon', key: 'coupon', width: 18 },
+    { header: 'Discount Name', key: 'name', width: 20 },
+    { header: 'Discount Type', key: 'type', width: 16 },
+    { header: 'Gross Sales', key: 'grossSales', width: 14 },
+    { header: 'Quantity', key: 'quantity', width: 10 },
+    { header: 'Reason', key: 'reason', width: 25 }
+  ];
+
+  const discountHeaderCells = ['A1', 'B1', 'C1', 'D1', 'E1', 'F1', 'G1', 'H1', 'I1', 'J1', 'K1', 'L1', 'M1'];
+  discountHeaderCells.forEach(cellRef => {
+    const cell = discountSheet.getCell(cellRef);
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+    cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+  });
+
+  discountsData.forEach(item => {
+    // Lookup matching sale from trendData's sales list to get exact sale open time
+    let saleOpenTime = 'Unknown';
+    const storeRow = trendData.find(r => r.storeName === item.storeName);
+    if (storeRow && storeRow.salesData) {
+      // Since all consolidated sales are on the selected day, we match by check No
+      const matchedSales = storeRow.salesData.filter((s: any) => s.ticketNo === item.check);
+      if (matchedSales.length > 0) {
+        let matched = matchedSales[0];
+        if (matchedSales.length > 1) {
+          const discountAmt = parseNum(item.discountAmtStr);
+          matched = matchedSales.find((s: any) => parseNum(s.discountVal) === discountAmt) || matchedSales[0];
+        }
+        saleOpenTime = matched.saleOpenTime || 'Unknown';
+      }
+    }
+
+    const rawDate = new Date(anchorDate);
+    const day = String(rawDate.getDate()).padStart(2, "0");
+    const month = String(rawDate.getMonth() + 1).padStart(2, "0");
+    const year = rawDate.getFullYear();
+    const formattedDate = `${day}-${month}-${year}`;
+
+    const row = discountSheet.addRow([
+      item.storeName,
+      item.approvedBy,
+      item.check,
+      formattedDate,
+      saleOpenTime,
+      parseNum(item.discountAmtStr),
+      item.discountAppliedBy,
+      item.discountCoupon,
+      item.discountName,
+      item.discountType,
+      parseNum(item.grossSalesStr),
+      item.quantity,
+      item.reason
+    ]);
+
+    row.getCell(6).numFmt = '"AED" #,##0.00';
+    row.getCell(6).alignment = { horizontal: 'right' };
+    row.getCell(11).numFmt = '"AED" #,##0.00';
+    row.getCell(11).alignment = { horizontal: 'right' };
+    row.getCell(12).numFmt = '#,##0';
+    row.getCell(12).alignment = { horizontal: 'right' };
   });
 
   const buffer = await workbook.xlsx.writeBuffer();

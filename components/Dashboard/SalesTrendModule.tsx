@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Store } from '../../types';
-import { fetchStoreTrendSummary } from '../../services/api';
+import { fetchStoreTrendSummary, fetchStoreDiscounts } from '../../services/api';
 import { exportSalesTrendToExcel } from '../../services/excelService';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
@@ -33,6 +33,7 @@ const SalesTrendModule: React.FC<SalesTrendModuleProps> = ({ storeList, theme, a
   
   const [sendingReport, setSendingReport] = useState(false);
   const [sendResult, setSendResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [exporting, setExporting] = useState(false);
   
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     if (anchorDate) return anchorDate;
@@ -141,8 +142,28 @@ const SalesTrendModule: React.FC<SalesTrendModuleProps> = ({ storeList, theme, a
     }), { thisWk: 0, lastWk: 0, lastMth: 0, lastYr: 0 } as Omit<StoreTrendData, 'storeId' | 'storeName'>);
   }, [trendData]);
 
-  const handleExport = () => {
-    exportSalesTrendToExcel(trendData, totals, selectedDate, anchorDates);
+  const handleExport = async () => {
+    if (trendData.length === 0) return;
+    setExporting(true);
+    const discountsData: any[] = [];
+    try {
+      await Promise.all(
+        trendData.map(async (storeRow) => {
+          const discounts = await fetchStoreDiscounts(storeRow.storeId, selectedDate);
+          discounts.forEach((d: any) => {
+            discountsData.push({
+              storeName: storeRow.storeName,
+              ...d
+            });
+          });
+        })
+      );
+      await exportSalesTrendToExcel(trendData, totals, selectedDate, anchorDates, discountsData);
+    } catch (err) {
+      console.error("Failed to export sales tracker with discounts:", err);
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handleEmailAndDrive = async () => {
@@ -313,10 +334,11 @@ const SalesTrendModule: React.FC<SalesTrendModuleProps> = ({ storeList, theme, a
                 </button>
                 <button
                   onClick={handleExport}
-                  className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-6 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all cursor-pointer"
+                  disabled={exporting || loading || sendingReport}
+                  className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 dark:text-slate-200 px-6 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all cursor-pointer"
                 >
-                  <Download className="w-5 h-5" />
-                  Export Tracker
+                  <Download className={`w-5 h-5 ${exporting ? 'animate-bounce' : ''}`} />
+                  {exporting ? 'Exporting...' : 'Export Tracker'}
                 </button>
               </>
             )}

@@ -407,3 +407,16 @@ export const fetchStoreTrendSummary = async (
 
   return results;
 };
+
+export const fetchStoreDiscounts = async (storeId: string, dateStr: string): Promise<any[]> => {
+  try {
+    const data = await fetchFromBackend(
+      `/v1/lingapos/store/${storeId}/discountReport?dateOption=DR&fromDate=${dateStr}&toDate=${dateStr}&selectedReportType=By Discount Type`
+    );
+    return data || [];
+  } catch (error) {
+    console.error(`Discounts fetch failed for store ${storeId} on ${dateStr}:`, error);
+    return [];
+  }
+};
+
