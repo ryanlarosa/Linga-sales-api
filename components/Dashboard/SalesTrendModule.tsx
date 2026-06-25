@@ -147,17 +147,22 @@ const SalesTrendModule: React.FC<SalesTrendModuleProps> = ({ storeList, theme, a
     setExporting(true);
     const discountsData: any[] = [];
     try {
-      await Promise.all(
-        trendData.map(async (storeRow) => {
+      // Fetch sequentially to avoid rate-limiting or connection timeouts from parallel requests
+      for (const storeRow of trendData) {
+        try {
           const discounts = await fetchStoreDiscounts(storeRow.storeId, selectedDate);
-          discounts.forEach((d: any) => {
-            discountsData.push({
-              storeName: storeRow.storeName,
-              ...d
+          if (Array.isArray(discounts)) {
+            discounts.forEach((d: any) => {
+              discountsData.push({
+                storeName: storeRow.storeName,
+                ...d
+              });
             });
-          });
-        })
-      );
+          }
+        } catch (err) {
+          console.error(`Failed to fetch discounts for ${storeRow.storeName}:`, err);
+        }
+      }
       await exportSalesTrendToExcel(trendData, totals, selectedDate, anchorDates, discountsData);
     } catch (err) {
       console.error("Failed to export sales tracker with discounts:", err);
