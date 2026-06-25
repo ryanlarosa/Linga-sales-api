@@ -91,28 +91,41 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
   // Helper function to parse discount date format (e.g., "28-Apr-2026")
   const parseDiscountDate = (dateStr: string): string => {
     if (!dateStr) return "";
-    // Handle format like "28-Apr-2026"
-    const months: Record<string, string> = {
-      Jan: "01",
-      Feb: "02",
-      Mar: "03",
-      Apr: "04",
-      May: "05",
-      Jun: "06",
-      Jul: "07",
-      Aug: "08",
-      Sep: "09",
-      Oct: "10",
-      Nov: "11",
-      Dec: "12",
-    };
-    const parts = dateStr.split("-");
-    if (parts.length === 3) {
-      const day = parts[0].trim();
-      const month = months[parts[1].trim()] || "01";
-      const year = parts[2].trim();
-      return `${year}-${month}-${day.padStart(2, "0")}`;
+    
+    // If it's an ISO timestamp or date with T, split it
+    if (dateStr.includes("T")) {
+      return dateStr.split("T")[0];
     }
+
+    const months: Record<string, string> = {
+      Jan: "01", Feb: "02", Mar: "03", Apr: "04", May: "05", Jun: "06",
+      Jul: "07", Aug: "08", Sep: "09", Oct: "10", Nov: "11", Dec: "12",
+    };
+
+    // Replace slashes with dashes
+    const normalized = dateStr.replace(/\//g, "-");
+    const parts = normalized.split("-");
+
+    if (parts.length === 3) {
+      const p0 = parts[0].trim();
+      const p1 = parts[1].trim();
+      const p2 = parts[2].trim();
+
+      // Case 1: YYYY-MM-DD
+      if (p0.length === 4) {
+        return `${p0}-${p1.padStart(2, "0")}-${p2.padStart(2, "0")}`;
+      }
+
+      // Case 2: DD-MMM-YYYY (e.g. 28-Apr-2026)
+      if (isNaN(Number(p1))) {
+        const monthVal = months[p1] || "01";
+        return `${p2}-${monthVal}-${p0.padStart(2, "0")}`;
+      }
+
+      // Case 3: DD-MM-YYYY (e.g. 06-11-2025)
+      return `${p2}-${p1.padStart(2, "0")}-${p0.padStart(2, "0")}`;
+    }
+
     return dateStr;
   };
 
