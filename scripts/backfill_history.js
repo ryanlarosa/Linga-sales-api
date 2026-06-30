@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getFirestore, doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
+import { initializeFirestore, memoryLocalCache, doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
 import axios from 'axios';
 
 const firebaseConfig = {
@@ -14,7 +14,7 @@ const LINGA_API_KEY = "UiSg7JagVOd42IEwAnctfWS6qSTaKxxr";
 const LINGAPOS_BASE_URL = "https://api.lingaros.com";
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-const db = getFirestore(app);
+const db = initializeFirestore(app, { localCache: memoryLocalCache() });
 
 // Helper to delay between requests to prevent API rate-limiting
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));

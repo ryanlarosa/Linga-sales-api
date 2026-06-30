@@ -7,7 +7,7 @@ import nodemailer from 'nodemailer';
 import { google } from 'googleapis';
 import { Readable } from 'stream';
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getFirestore, doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
+import { initializeFirestore, memoryLocalCache, doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
 
 const app = express();
 
@@ -420,7 +420,7 @@ const firebaseConfig = {
 };
 
 const firebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-const db = getFirestore(firebaseApp);
+const db = initializeFirestore(firebaseApp, { localCache: memoryLocalCache() });
 
 const DEFAULT_STORES = [
   { name: "Common Grounds DIFC", id: "5e4be85b7237b70001de9106" },
