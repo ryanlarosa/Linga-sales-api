@@ -630,7 +630,7 @@ const firebaseConfig = {
 };
 
 const firebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-const db = initializeFirestore(firebaseApp, { localCache: memoryLocalCache() });
+const db = initializeFirestore(firebaseApp, { localCache: memoryLocalCache() }); // Force trigger Vercel redeploy
 
 const DEFAULT_STORES = [
   { name: "Common Grounds DIFC", id: "5e4be85b7237b70001de9106" },
