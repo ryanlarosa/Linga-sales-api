@@ -125,10 +125,10 @@ function pruneDiscountData(data) {
 function pruneSaleReportData(data) {
     if (!data || !data.data) return data;
     const pruned = data.data.map(m => ({
-        id: m.id || "",
-        menuName: m.menuName || "",
+        id: m.itemId || m.id || "",
+        menuName: m.name || m.menuName || "",
         quantity: m.quantity || 0,
-        totalGrossAmountStr: m.totalGrossAmountStr || "0.00"
+        totalGrossAmountStr: m.saleAmountStr || m.totalGrossAmountStr || "0.00"
     }));
     return { data: pruned };
 }
