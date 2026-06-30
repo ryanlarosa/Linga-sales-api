@@ -37,6 +37,115 @@ async function callLingaApi(endpoint, params = {}) {
     }
 }
 
+function formatToLingaDate(dateStr) {
+    if (!dateStr.includes('-')) return dateStr;
+    const parts = dateStr.split('-');
+    if (parts.length !== 3) return dateStr;
+    const year = parts[0];
+    const monthIndex = parseInt(parts[1], 10) - 1;
+    const day = parts[2];
+    const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+    return `${day}-${months[monthIndex]}-${year}`;
+}
+
+function pruneSalesData(data) {
+    if (!data || !data.sales) return data;
+    const prunedSales = data.sales.map(sale => {
+        const prunedPayments = sale.payments ? sale.payments.map(p => ({
+            paymentMethod: p.paymentMethod || "Other",
+            paymentType: p.paymentType || "Other",
+            authorizedAmountStr: p.authorizedAmountStr || "0.00",
+            paymentTipStr: p.paymentTipStr || "0.00"
+        })) : [];
+
+        const prunedOrders = sale.orders ? sale.orders.map(o => ({
+            departmentName: o.departmentName || "",
+            categoryName: o.categoryName || "",
+            subCategoryName: o.subCategoryName || "",
+            quantity: o.quantity || 0,
+            menuName: o.menuName || "",
+            grossAmountStr: o.grossAmountStr || "0.00",
+            totalGrossAmountStr: o.totalGrossAmountStr || "0.00",
+            totalDiscountAmountStr: o.totalDiscountAmountStr || "0.00",
+            isVoid: o.isVoid || "false",
+            voidError: o.voidError || "",
+            voidByEmployee: o.voidByEmployee || "",
+            orderHour: o.orderHour || "00",
+            orderMin: o.orderMin || "00"
+        })) : [];
+
+        return {
+            id: sale.id,
+            ticketNo: sale.ticketNo || "",
+            startDate: sale.startDate || "",
+            saleOpenTime: sale.saleOpenTime || "",
+            customerName: sale.customerName || "",
+            tableNo: sale.tableNo || "",
+            floorId: sale.floorId || "",
+            employee: sale.employee || "",
+            saleCloseEmployee: sale.saleCloseEmployee || "",
+            guestCount: sale.guestCount || 0,
+            netSalesStr: sale.netSalesStr || sale.netSalesStrStr || "0.00",
+            grossAmountStr: sale.grossAmountStr || "0.00",
+            totalTaxAmountStr: sale.totalTaxAmountStr || "0.00",
+            grossReceiptStr: sale.grossReceiptStr || "0.00",
+            payments: prunedPayments,
+            orders: prunedOrders
+        };
+    });
+
+    return {
+        ...data,
+        sales: prunedSales
+    };
+}
+
+function pruneDiscountData(data) {
+    if (!Array.isArray(data)) return data;
+    return data.map(d => ({
+        id: d.id || "",
+        check: d.check || "",
+        approvedBy: d.approvedBy || "",
+        date: d.date || "",
+        discountAmtStr: d.discountAmtStr || "0.00",
+        discountAppliedBy: d.discountAppliedBy || "",
+        discountCoupon: d.discountCoupon || "",
+        discountName: d.discountName || "",
+        discountType: d.discountType || "",
+        grossSalesStr: d.grossSalesStr || "0.00",
+        isTotal: !!d.isTotal,
+        menuItems: d.menuItems || "",
+        percent: d.percent || "0.00",
+        quantity: d.quantity || 0,
+        reason: d.reason || "",
+        totalDiscounts: d.totalDiscounts || "0.00"
+    }));
+}
+
+function pruneSaleReportData(data) {
+    if (!data || !data.data) return data;
+    const pruned = data.data.map(m => ({
+        id: m.id || "",
+        menuName: m.menuName || "",
+        quantity: m.quantity || 0,
+        totalGrossAmountStr: m.totalGrossAmountStr || "0.00"
+    }));
+    return { ...data, data: pruned };
+}
+
+function pruneSummaryData(data) {
+    if (!Array.isArray(data)) return data;
+    return data.map(s => ({
+        id: s.id || "",
+        netSales: s.netSales || "0.00",
+        discounts: s.discounts || "0.00",
+        totalTaxAmount: s.totalTaxAmount || "0.00",
+        saleOpenDate: s.saleOpenDate || "",
+        floorNo: s.floorNo || "",
+        tableNo: s.tableNo || ""
+    }));
+}
+
 async function runBackfill() {
     console.log("=== LingaPOS Analytics Historical Database Backfill ===");
     console.log("Initializing database connection...");
@@ -93,10 +202,10 @@ async function runBackfill() {
             
             // Define collections to cache
             const cacheCollections = [
-                { name: 'sales_cache', endpoint: `/v1/lingapos/store/${store.id}/getsale`, params: { fromDate: dateStr, toDate: dateStr } },
-                { name: 'discounts_cache', endpoint: `/v1/lingapos/store/${store.id}/discountReport`, params: { dateOption: 'DR', fromDate: dateStr, toDate: dateStr, selectedReportType: 'By Discount Type' } },
-                { name: 'sale_reports_cache', endpoint: `/v1/lingapos/store/${store.id}/saleReport`, params: { dateOption: 'DR', employeeGroup: 'N', fromDate: dateStr, toDate: dateStr, isDetailedView: 'false', numberOfDay: '', page: 1, reportType: '', selectedEmployee: '', selectedItemId: '', specificDate: '', type: 'MENUITEM' } },
-                { name: 'sale_summaries_cache', endpoint: `/v1/lingapos/store/${store.id}/saleSummaryReport`, params: { dateOption: 'DR', fromDate: dateStr, toDate: dateStr } }
+                { name: 'sales_cache', endpoint: `/v1/lingapos/store/${store.id}/getsale`, params: { fromDate: formatToLingaDate(dateStr), toDate: formatToLingaDate(dateStr) } },
+                { name: 'discounts_cache', endpoint: `/v1/lingapos/store/${store.id}/discountReport`, params: { dateOption: 'DR', fromDate: formatToLingaDate(dateStr), toDate: formatToLingaDate(dateStr), selectedReportType: 'By Discount Type' } },
+                { name: 'sale_reports_cache', endpoint: `/v1/lingapos/store/${store.id}/saleReport`, params: { dateOption: 'DR', employeeGroup: 'N', fromDate: formatToLingaDate(dateStr), toDate: formatToLingaDate(dateStr), isDetailedView: 'false', numberOfDay: '', page: 1, reportType: '', selectedEmployee: '', selectedItemId: '', specificDate: '', type: 'MENUITEM' } },
+                { name: 'sale_summaries_cache', endpoint: `/v1/lingapos/store/${store.id}/saleSummaryReport`, params: { dateOption: 'DR', fromDate: formatToLingaDate(dateStr), toDate: formatToLingaDate(dateStr) } }
             ];
 
             for (const col of cacheCollections) {
@@ -113,11 +222,18 @@ async function runBackfill() {
                     console.log(`  -> Fetching ${col.name} for ${store.name}...`);
                     const data = await callLingaApi(col.endpoint, col.params);
                     
+                    // Prune data before saving to keep it under 1MB Limit
+                    let prunedData = data;
+                    if (col.name === 'sales_cache') prunedData = pruneSalesData(data);
+                    else if (col.name === 'discounts_cache') prunedData = pruneDiscountData(data);
+                    else if (col.name === 'sale_reports_cache') prunedData = pruneSaleReportData(data);
+                    else if (col.name === 'sale_summaries_cache') prunedData = pruneSummaryData(data);
+                    
                     // Save to Firestore
                     await setDoc(docRef, {
                         storeId: store.id,
                         date: dateStr,
-                        data: data,
+                        data: prunedData,
                         createdAt: new Date().toISOString()
                     });
                     

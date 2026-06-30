@@ -60,18 +60,146 @@ async function callExternalApi(url, params = {}) {
     }
 }
 
+function parseStringToDate(str) {
+    if (!str.includes('-')) return new Date(str);
+    const parts = str.split('-');
+    if (parts[0].length === 4) {
+        // YYYY-MM-DD
+        return new Date(str);
+    }
+    // DD-MMM-YYYY
+    const day = parseInt(parts[0], 10);
+    const monthStr = parts[1].toUpperCase();
+    const year = parseInt(parts[2], 10);
+    const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+    const monthIndex = months.indexOf(monthStr);
+    return new Date(year, monthIndex, day);
+}
+
+function formatToLingaDate(dateStr) {
+    if (!dateStr.includes('-')) return dateStr;
+    const parts = dateStr.split('-');
+    if (parts.length !== 3) return dateStr;
+    const year = parts[0];
+    const monthIndex = parseInt(parts[1], 10) - 1;
+    const day = parts[2];
+    const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+    return `${day}-${months[monthIndex]}-${year}`;
+}
+
 function getDatesInRange(fromDateStr, toDateStr) {
     const dates = [];
-    let current = new Date(fromDateStr);
-    const end = new Date(toDateStr);
+    let current = parseStringToDate(fromDateStr);
+    const end = parseStringToDate(toDateStr);
     while (current <= end) {
-        dates.push(current.toISOString().split('T')[0]);
+        const yyyy = current.getFullYear();
+        const mm = String(current.getMonth() + 1).padStart(2, "0");
+        const dd = String(current.getDate()).padStart(2, "0");
+        dates.push(`${yyyy}-${mm}-${dd}`);
         current.setDate(current.getDate() + 1);
     }
     return dates;
 }
 
-async function getCachedOrFetchDaily(storeId, fromDateStr, toDateStr, collectionName, fetchFn, combineFn) {
+function pruneSalesData(data) {
+    if (!data || !data.sales) return data;
+    const prunedSales = data.sales.map(sale => {
+        const prunedPayments = sale.payments ? sale.payments.map(p => ({
+            paymentMethod: p.paymentMethod || "Other",
+            paymentType: p.paymentType || "Other",
+            authorizedAmountStr: p.authorizedAmountStr || "0.00",
+            paymentTipStr: p.paymentTipStr || "0.00"
+        })) : [];
+
+        const prunedOrders = sale.orders ? sale.orders.map(o => ({
+            departmentName: o.departmentName || "",
+            categoryName: o.categoryName || "",
+            subCategoryName: o.subCategoryName || "",
+            quantity: o.quantity || 0,
+            menuName: o.menuName || "",
+            grossAmountStr: o.grossAmountStr || "0.00",
+            totalGrossAmountStr: o.totalGrossAmountStr || "0.00",
+            totalDiscountAmountStr: o.totalDiscountAmountStr || "0.00",
+            isVoid: o.isVoid || "false",
+            voidError: o.voidError || "",
+            voidByEmployee: o.voidByEmployee || "",
+            orderHour: o.orderHour || "00",
+            orderMin: o.orderMin || "00"
+        })) : [];
+
+        return {
+            id: sale.id,
+            ticketNo: sale.ticketNo || "",
+            startDate: sale.startDate || "",
+            saleOpenTime: sale.saleOpenTime || "",
+            customerName: sale.customerName || "",
+            tableNo: sale.tableNo || "",
+            floorId: sale.floorId || "",
+            employee: sale.employee || "",
+            saleCloseEmployee: sale.saleCloseEmployee || "",
+            guestCount: sale.guestCount || 0,
+            netSalesStr: sale.netSalesStr || sale.netSalesStrStr || "0.00",
+            grossAmountStr: sale.grossAmountStr || "0.00",
+            totalTaxAmountStr: sale.totalTaxAmountStr || "0.00",
+            grossReceiptStr: sale.grossReceiptStr || "0.00",
+            payments: prunedPayments,
+            orders: prunedOrders
+        };
+    });
+
+    return {
+        ...data,
+        sales: prunedSales
+    };
+}
+
+function pruneDiscountData(data) {
+    if (!Array.isArray(data)) return data;
+    return data.map(d => ({
+        id: d.id || "",
+        check: d.check || "",
+        approvedBy: d.approvedBy || "",
+        date: d.date || "",
+        discountAmtStr: d.discountAmtStr || "0.00",
+        discountAppliedBy: d.discountAppliedBy || "",
+        discountCoupon: d.discountCoupon || "",
+        discountName: d.discountName || "",
+        discountType: d.discountType || "",
+        grossSalesStr: d.grossSalesStr || "0.00",
+        isTotal: !!d.isTotal,
+        menuItems: d.menuItems || "",
+        percent: d.percent || "0.00",
+        quantity: d.quantity || 0,
+        reason: d.reason || "",
+        totalDiscounts: d.totalDiscounts || "0.00"
+    }));
+}
+
+function pruneSaleReportData(data) {
+    if (!data || !data.data) return data;
+    const pruned = data.data.map(m => ({
+        id: m.id || "",
+        menuName: m.menuName || "",
+        quantity: m.quantity || 0,
+        totalGrossAmountStr: m.totalGrossAmountStr || "0.00"
+    }));
+    return { ...data, data: pruned };
+}
+
+function pruneSummaryData(data) {
+    if (!Array.isArray(data)) return data;
+    return data.map(s => ({
+        id: s.id || "",
+        netSales: s.netSales || "0.00",
+        discounts: s.discounts || "0.00",
+        totalTaxAmount: s.totalTaxAmount || "0.00",
+        saleOpenDate: s.saleOpenDate || "",
+        floorNo: s.floorNo || "",
+        tableNo: s.tableNo || ""
+    }));
+}
+
+async function getCachedOrFetchDaily(storeId, fromDateStr, toDateStr, collectionName, fetchFn, combineFn, pruneFn) {
     const dates = getDatesInRange(fromDateStr, toDateStr);
     const results = [];
     
@@ -87,20 +215,23 @@ async function getCachedOrFetchDaily(storeId, fromDateStr, toDateStr, collection
                 console.log(`[Cache Miss] Fetching ${collectionName} for ${storeId} on ${date} from LINGAPOS...`);
                 // Fetch for this single day
                 const apiData = await fetchFn(date);
+                // Prune the data
+                const prunedData = pruneFn ? pruneFn(apiData) : apiData;
                 // Save to Firestore
                 await setDoc(docRef, {
                     storeId,
                     date,
-                    data: apiData,
+                    data: prunedData,
                     createdAt: new Date().toISOString()
                 });
-                results.push(apiData);
+                results.push(prunedData);
             }
         } catch (err) {
             console.error(`[Cache Error] Failed for ${collectionName} doc ${docId}:`, err.message);
             // Bypassing cache on error to ensure user gets data anyway
             const apiData = await fetchFn(date);
-            results.push(apiData);
+            const prunedData = pruneFn ? pruneFn(apiData) : apiData;
+            results.push(prunedData);
         }
     }
     
@@ -124,7 +255,7 @@ app.get('/api/v1/lingapos/store/:storeId/getsale', async (req, res) => {
             'sales_cache',
             async (date) => {
                 const url = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/getsale`;
-                const response = await callExternalApi(url, { fromDate: date, toDate: date });
+                const response = await callExternalApi(url, { fromDate: formatToLingaDate(date), toDate: formatToLingaDate(date) });
                 return response.data;
             },
             (dailyResults) => {
@@ -135,7 +266,8 @@ app.get('/api/v1/lingapos/store/:storeId/getsale', async (req, res) => {
                     }
                 });
                 return { sales: combinedSales };
-            }
+            },
+            pruneSalesData
         );
         res.json(combinedData);
     } catch (error) {
@@ -160,8 +292,8 @@ app.get('/api/v1/lingapos/store/:storeId/discountReport', async (req, res) => {
                 const url = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/discountReport`;
                 const response = await callExternalApi(url, { 
                     dateOption: 'DR', 
-                    fromDate: date, 
-                    toDate: date, 
+                    fromDate: formatToLingaDate(date), 
+                    toDate: formatToLingaDate(date), 
                     selectedReportType: selectedReportType || 'By Discount Type' 
                 });
                 return response.data;
@@ -174,7 +306,8 @@ app.get('/api/v1/lingapos/store/:storeId/discountReport', async (req, res) => {
                     }
                 });
                 return combinedDiscounts;
-            }
+            },
+            pruneDiscountData
         );
         res.json(combinedData);
     } catch (error) {
@@ -219,7 +352,7 @@ app.get('/api/v1/lingapos/store/:storeId/saleReport', async (req, res) => {
             'sale_reports_cache',
             async (date) => {
                 const url = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/saleReport`;
-                const queryParams = { ...req.query, fromDate: date, toDate: date };
+                const queryParams = { ...req.query, fromDate: formatToLingaDate(date), toDate: formatToLingaDate(date) };
                 const response = await callExternalApi(url, queryParams);
                 return response.data;
             },
@@ -231,7 +364,8 @@ app.get('/api/v1/lingapos/store/:storeId/saleReport', async (req, res) => {
                     }
                 });
                 return { data: combinedMenuData };
-            }
+            },
+            pruneSaleReportData
         );
         res.json(combinedData);
     } catch (error) {
@@ -254,7 +388,7 @@ app.get('/api/v1/lingapos/store/:storeId/saleSummaryReport', async (req, res) =>
             'sale_summaries_cache',
             async (date) => {
                 const url = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/saleSummaryReport`;
-                const queryParams = { ...req.query, fromDate: date, toDate: date };
+                const queryParams = { ...req.query, fromDate: formatToLingaDate(date), toDate: formatToLingaDate(date) };
                 const response = await callExternalApi(url, queryParams);
                 return response.data;
             },
@@ -266,7 +400,8 @@ app.get('/api/v1/lingapos/store/:storeId/saleSummaryReport', async (req, res) =>
                     }
                 });
                 return combinedSummary;
-            }
+            },
+            pruneSummaryData
         );
         res.json(combinedData);
     } catch (error) {
