@@ -6,6 +6,8 @@ import ExcelJS from 'exceljs';
 import nodemailer from 'nodemailer';
 import { google } from 'googleapis';
 import { Readable } from 'stream';
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
 
 const app = express();
 
@@ -58,15 +60,84 @@ async function callExternalApi(url, params = {}) {
     }
 }
 
+function getDatesInRange(fromDateStr, toDateStr) {
+    const dates = [];
+    let current = new Date(fromDateStr);
+    const end = new Date(toDateStr);
+    while (current <= end) {
+        dates.push(current.toISOString().split('T')[0]);
+        current.setDate(current.getDate() + 1);
+    }
+    return dates;
+}
+
+async function getCachedOrFetchDaily(storeId, fromDateStr, toDateStr, collectionName, fetchFn, combineFn) {
+    const dates = getDatesInRange(fromDateStr, toDateStr);
+    const results = [];
+    
+    for (const date of dates) {
+        const docId = `${storeId}_${date}`;
+        const docRef = doc(db, collectionName, docId);
+        try {
+            const snap = await getDoc(docRef);
+            if (snap.exists()) {
+                console.log(`[Cache Hit] ${collectionName} for ${storeId} on ${date}`);
+                results.push(snap.data().data);
+            } else {
+                console.log(`[Cache Miss] Fetching ${collectionName} for ${storeId} on ${date} from LINGAPOS...`);
+                // Fetch for this single day
+                const apiData = await fetchFn(date);
+                // Save to Firestore
+                await setDoc(docRef, {
+                    storeId,
+                    date,
+                    data: apiData,
+                    createdAt: new Date().toISOString()
+                });
+                results.push(apiData);
+            }
+        } catch (err) {
+            console.error(`[Cache Error] Failed for ${collectionName} doc ${docId}:`, err.message);
+            // Bypassing cache on error to ensure user gets data anyway
+            const apiData = await fetchFn(date);
+            results.push(apiData);
+        }
+    }
+    
+    return combineFn(results);
+}
+
 // --- API Routes ---
 
 app.get('/api/v1/lingapos/store/:storeId/getsale', async (req, res) => {
     try {
         const { storeId } = req.params;
         const { fromDate, toDate } = req.query;
-        const url = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/getsale`;
-        const response = await callExternalApi(url, { fromDate, toDate });
-        res.json(response.data);
+        if (!fromDate || !toDate) {
+            return res.status(400).json({ error: "fromDate and toDate are required query params." });
+        }
+        
+        const combinedData = await getCachedOrFetchDaily(
+            storeId,
+            fromDate,
+            toDate,
+            'sales_cache',
+            async (date) => {
+                const url = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/getsale`;
+                const response = await callExternalApi(url, { fromDate: date, toDate: date });
+                return response.data;
+            },
+            (dailyResults) => {
+                const combinedSales = [];
+                dailyResults.forEach(r => {
+                    if (r && r.sales) {
+                        combinedSales.push(...r.sales);
+                    }
+                });
+                return { sales: combinedSales };
+            }
+        );
+        res.json(combinedData);
     } catch (error) {
         res.status(error.status || 500).json(error.data || { error: error.message });
     }
@@ -75,10 +146,37 @@ app.get('/api/v1/lingapos/store/:storeId/getsale', async (req, res) => {
 app.get('/api/v1/lingapos/store/:storeId/discountReport', async (req, res) => {
     try {
         const { storeId } = req.params;
-        const { dateOption, fromDate, toDate, selectedReportType } = req.query;
-        const url = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/discountReport`;
-        const response = await callExternalApi(url, { dateOption, fromDate, toDate, selectedReportType });
-        res.json(response.data);
+        const { fromDate, toDate, selectedReportType } = req.query;
+        if (!fromDate || !toDate) {
+            return res.status(400).json({ error: "fromDate and toDate are required query params." });
+        }
+        
+        const combinedData = await getCachedOrFetchDaily(
+            storeId,
+            fromDate,
+            toDate,
+            'discounts_cache',
+            async (date) => {
+                const url = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/discountReport`;
+                const response = await callExternalApi(url, { 
+                    dateOption: 'DR', 
+                    fromDate: date, 
+                    toDate: date, 
+                    selectedReportType: selectedReportType || 'By Discount Type' 
+                });
+                return response.data;
+            },
+            (dailyResults) => {
+                const combinedDiscounts = [];
+                dailyResults.forEach(r => {
+                    if (Array.isArray(r)) {
+                        combinedDiscounts.push(...r);
+                    }
+                });
+                return combinedDiscounts;
+            }
+        );
+        res.json(combinedData);
     } catch (error) {
         res.status(error.status || 500).json(error.data || { error: error.message });
     }
@@ -109,9 +207,33 @@ app.get('/api/v1/lingapos/store/:storeId/users', async (req, res) => {
 app.get('/api/v1/lingapos/store/:storeId/saleReport', async (req, res) => {
     try {
         const { storeId } = req.params;
-        const url = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/saleReport`;
-        const response = await callExternalApi(url, req.query);
-        res.json(response.data);
+        const { fromDate, toDate } = req.query;
+        if (!fromDate || !toDate) {
+            return res.status(400).json({ error: "fromDate and toDate are required query params." });
+        }
+        
+        const combinedData = await getCachedOrFetchDaily(
+            storeId,
+            fromDate,
+            toDate,
+            'sale_reports_cache',
+            async (date) => {
+                const url = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/saleReport`;
+                const queryParams = { ...req.query, fromDate: date, toDate: date };
+                const response = await callExternalApi(url, queryParams);
+                return response.data;
+            },
+            (dailyResults) => {
+                const combinedMenuData = [];
+                dailyResults.forEach(r => {
+                    if (r && r.data) {
+                        combinedMenuData.push(...r.data);
+                    }
+                });
+                return { data: combinedMenuData };
+            }
+        );
+        res.json(combinedData);
     } catch (error) {
         res.status(error.status || 500).json(error.data || { error: error.message });
     }
@@ -120,9 +242,33 @@ app.get('/api/v1/lingapos/store/:storeId/saleReport', async (req, res) => {
 app.get('/api/v1/lingapos/store/:storeId/saleSummaryReport', async (req, res) => {
     try {
         const { storeId } = req.params;
-        const url = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/saleSummaryReport`;
-        const response = await callExternalApi(url, req.query);
-        res.json(response.data);
+        const { fromDate, toDate } = req.query;
+        if (!fromDate || !toDate) {
+            return res.status(400).json({ error: "fromDate and toDate are required query params." });
+        }
+        
+        const combinedData = await getCachedOrFetchDaily(
+            storeId,
+            fromDate,
+            toDate,
+            'sale_summaries_cache',
+            async (date) => {
+                const url = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/saleSummaryReport`;
+                const queryParams = { ...req.query, fromDate: date, toDate: date };
+                const response = await callExternalApi(url, queryParams);
+                return response.data;
+            },
+            (dailyResults) => {
+                const combinedSummary = [];
+                dailyResults.forEach(r => {
+                    if (Array.isArray(r)) {
+                        combinedSummary.push(...r);
+                    }
+                });
+                return combinedSummary;
+            }
+        );
+        res.json(combinedData);
     } catch (error) {
         res.status(error.status || 500).json(error.data || { error: error.message });
     }
@@ -138,6 +284,9 @@ const firebaseConfig = {
   appId: "1:410696735630:web:53c6232262daad169622df"
 };
 
+const firebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+const db = getFirestore(firebaseApp);
+
 const DEFAULT_STORES = [
   { name: "Common Grounds DIFC", id: "5e4be85b7237b70001de9106" },
   { name: "Common Grounds DMCC", id: "5e4be880716db00001c7b6f1" },
@@ -148,10 +297,6 @@ const DEFAULT_STORES = [
 
 async function getActiveStores() {
   try {
-    const { initializeApp } = await import('firebase/app');
-    const { getFirestore, collection, getDocs } = await import('firebase/firestore');
-    const firebaseApp = initializeApp(firebaseConfig);
-    const db = getFirestore(firebaseApp);
     const snapshot = await getDocs(collection(db, 'stores'));
     if (snapshot.empty) return DEFAULT_STORES;
     const stores = [];
@@ -168,10 +313,6 @@ async function getActiveStores() {
 
 async function getAutomationSettingsBackend() {
   try {
-    const { initializeApp } = await import('firebase/app');
-    const { getFirestore, doc, getDoc } = await import('firebase/firestore');
-    const firebaseApp = initializeApp(firebaseConfig);
-    const db = getFirestore(firebaseApp);
     const docRef = doc(db, 'configs', 'cover_tracker_automation');
     const snapshot = await getDoc(docRef);
     if (snapshot.exists()) {
@@ -213,17 +354,56 @@ async function fetchStoreTrendSummaryBackend(storeId, dates) {
       const formatted = formatDateParam(date);
       const dateKey = formatDateString(date);
 
-      try {
-        const salesUrl = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/getsale`;
-        const summaryUrl = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/saleSummaryReport`;
+      // YYYY-MM-DD for Cache doc key
+      const yyyy = date.getFullYear();
+      const mm = String(date.getMonth() + 1).padStart(2, "0");
+      const dd = String(date.getDate()).padStart(2, "0");
+      const dateStrIso = `${yyyy}-${mm}-${dd}`;
 
-        const [salesRes, summaryRes] = await Promise.all([
-          callExternalApi(salesUrl, { fromDate: formatted, toDate: formatted }),
-          callExternalApi(summaryUrl, { dateOption: 'DR', fromDate: formatted, toDate: formatted })
+      try {
+        const salesDocRef = doc(db, 'sales_cache', `${storeId}_${dateStrIso}`);
+        const summaryDocRef = doc(db, 'sale_summaries_cache', `${storeId}_${dateStrIso}`);
+
+        let salesData;
+        let summaryData;
+
+        // Try load from cache first
+        const [snapSales, snapSummary] = await Promise.all([
+          getDoc(salesDocRef),
+          getDoc(summaryDocRef)
         ]);
 
-        const salesData = salesRes.data;
-        const summaryData = summaryRes.data;
+        if (snapSales.exists()) {
+          console.log(`[Backend Cache Hit] getsale for ${storeId} on ${dateStrIso}`);
+          salesData = snapSales.data().data;
+        } else {
+          console.log(`[Backend Cache Miss] Fetching getsale for ${storeId} on ${dateStrIso}...`);
+          const salesUrl = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/getsale`;
+          const salesRes = await callExternalApi(salesUrl, { fromDate: formatted, toDate: formatted });
+          salesData = salesRes.data;
+          await setDoc(salesDocRef, {
+            storeId,
+            date: dateStrIso,
+            data: salesData,
+            createdAt: new Date().toISOString()
+          });
+        }
+
+        if (snapSummary.exists()) {
+          console.log(`[Backend Cache Hit] saleSummaryReport for ${storeId} on ${dateStrIso}`);
+          summaryData = snapSummary.data().data;
+        } else {
+          console.log(`[Backend Cache Miss] Fetching saleSummaryReport for ${storeId} on ${dateStrIso}...`);
+          const summaryUrl = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/saleSummaryReport`;
+          const summaryRes = await callExternalApi(summaryUrl, { dateOption: 'DR', fromDate: formatted, toDate: formatted });
+          summaryData = summaryRes.data;
+          await setDoc(summaryDocRef, {
+            storeId,
+            date: dateStrIso,
+            data: summaryData,
+            createdAt: new Date().toISOString()
+          });
+        }
 
         let dailyCovers = 0;
         let dailyNet = 0;
@@ -756,10 +936,6 @@ async function generateSalesExcelBuffer(trendData, totals, selectedDate, anchorD
 
 async function getMailerSettingsBackend() {
   try {
-    const { initializeApp } = await import('firebase/app');
-    const { getFirestore, doc, getDoc } = await import('firebase/firestore');
-    const firebaseApp = initializeApp(firebaseConfig);
-    const db = getFirestore(firebaseApp);
     const docRef = doc(db, 'configs', 'mailer_settings');
     const snapshot = await getDoc(docRef);
     if (snapshot.exists()) {
@@ -930,10 +1106,6 @@ async function sendEmailReport(fileBuffer, fileName, selectedDate, mailerSetting
 
 async function writeReportLogBackend({ type, reportType, reportDate, status, recipients, driveLink, errorMsg }) {
   try {
-    const { initializeApp } = await import('firebase/app');
-    const { getFirestore, doc, setDoc } = await import('firebase/firestore');
-    const firebaseApp = initializeApp(firebaseConfig);
-    const db = getFirestore(firebaseApp);
     
     const id = `${reportType.toLowerCase()}_${type.toLowerCase()}_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
     const log = {
