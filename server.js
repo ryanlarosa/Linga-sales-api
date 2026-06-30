@@ -183,7 +183,7 @@ function pruneSaleReportData(data) {
         quantity: m.quantity || 0,
         totalGrossAmountStr: m.totalGrossAmountStr || "0.00"
     }));
-    return { ...data, data: pruned };
+    return { data: pruned };
 }
 
 function pruneSummaryData(data) {
