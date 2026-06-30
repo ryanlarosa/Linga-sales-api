@@ -20,12 +20,58 @@ interface SettingsModuleProps {
 }
 
 const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
-  const [tab, setTab] = useState<"STORES" | "USERS" | "AUTOMATION" | "MAILER" | "LOGS">("STORES");
+  const [tab, setTab] = useState<"STORES" | "USERS" | "AUTOMATION" | "MAILER" | "LOGS" | "CACHING">("STORES");
   const [stores, setStores] = useState<Store[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [reportLogs, setReportLogs] = useState<ReportLog[]>([]);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
+  
+  // Caching Backfill States
+  const [syncFromDate, setSyncFromDate] = useState("2026-06-01");
+  const [syncToDate, setSyncToDate] = useState("2026-06-30");
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [backfillStatus, setBackfillStatus] = useState<{
+    status: "idle" | "running" | "paused" | "completed" | "failed";
+    completedDays: number;
+    totalDays: number;
+    currentDate: string;
+    totalSaved: number;
+    rangeStart?: string;
+    rangeEnd?: string;
+    error?: string;
+  }>({
+    status: "idle",
+    completedDays: 0,
+    totalDays: 0,
+    currentDate: "",
+    totalSaved: 0
+  });
+
+  const fetchBackfillStatus = async () => {
+    try {
+      const response = await fetch("/api/v1/backfill/status");
+      if (response.ok) {
+        const data = await response.json();
+        setBackfillStatus(data);
+      }
+    } catch (e) {
+      console.error("Failed to fetch backfill status:", e);
+    }
+  };
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (tab === "CACHING") {
+      fetchBackfillStatus();
+      interval = setInterval(() => {
+        fetchBackfillStatus();
+      }, 2000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [tab]);
   
   // Automation settings state
   const [autoSettings, setAutoSettings] = useState<{
@@ -109,6 +155,69 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  const handleStartSync = async () => {
+    setStatusLoading(true);
+    setMsg("Initiating database sync...");
+    try {
+      const response = await fetch("/api/v1/backfill/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fromDate: syncFromDate, toDate: syncToDate }),
+      });
+      if (response.ok) {
+        setMsg("Database sync initiated successfully!");
+        fetchBackfillStatus();
+      } else {
+        const err = await response.json();
+        setMsg(`Failed to start sync: ${err.error || "Unknown error"}`);
+      }
+    } catch (e: any) {
+      setMsg(`Error triggering sync: ${e.message}`);
+    } finally {
+      setStatusLoading(false);
+      setTimeout(() => setMsg(""), 5000);
+    }
+  };
+
+  const handlePauseSync = async () => {
+    setStatusLoading(true);
+    try {
+      const response = await fetch("/api/v1/backfill/pause", { method: "POST" });
+      if (response.ok) {
+        setMsg("Pausing signal sent. Sync will halt shortly.");
+        fetchBackfillStatus();
+      } else {
+        setMsg("Failed to pause sync.");
+      }
+    } catch (e: any) {
+      setMsg(`Error pausing sync: ${e.message}`);
+    } finally {
+      setStatusLoading(false);
+      setTimeout(() => setMsg(""), 5000);
+    }
+  };
+
+  const handleResetCache = async () => {
+    if (!window.confirm("Are you sure you want to clear all cached sales, discounts, and reports data? This will wipe the database cache completely and start fresh!")) return;
+    setStatusLoading(true);
+    setMsg("Wiping all cache collections from Firestore (this might take up to a minute)...");
+    try {
+      const response = await fetch("/api/v1/backfill/reset", { method: "POST" });
+      if (response.ok) {
+        setMsg("All cached data cleared from Firestore successfully!");
+        fetchBackfillStatus();
+      } else {
+        const err = await response.json();
+        setMsg(`Wipe failed: ${err.error}`);
+      }
+    } catch (e: any) {
+      setMsg(`Error clearing cache: ${e.message}`);
+    } finally {
+      setStatusLoading(false);
+      setTimeout(() => setMsg(""), 5000);
+    }
+  };
 
   const handleAutomationSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -287,6 +396,15 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
         >
           Logs History
         </button>
+        <button
+          onClick={() => {
+            setTab("CACHING");
+            resetUserForm();
+          }}
+          className={`px-4 py-2 text-sm font-bold border-b-2 transition-all whitespace-nowrap ${tab === "CACHING" ? "border-rose-600 text-rose-600 dark:text-rose-400" : "text-slate-400"}`}
+        >
+          Database Cache
+        </button>
       </div>
 
       {msg && (
@@ -295,7 +413,158 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+      {tab === "CACHING" ? (
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 shadow-sm transition-all space-y-6">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-100 dark:border-slate-800 pb-6 gap-4">
+            <div>
+              <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">
+                Historical Database Caching
+              </h3>
+              <p className="text-sm text-slate-400 mt-1">
+                Wipe, backfill, and monitor Firestore caching layers for high-speed offline analytics.
+              </p>
+            </div>
+            <button
+              onClick={handleResetCache}
+              disabled={statusLoading || backfillStatus.status === "running"}
+              className="px-4 py-2 text-xs font-bold bg-slate-100 dark:bg-slate-800 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-xl transition-all disabled:opacity-50"
+            >
+              Reset & Clear Cache
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Range Pickers */}
+            <div className="bg-slate-50 dark:bg-slate-950 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 space-y-4">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                Range Configuration
+              </h4>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
+                  Start Date
+                </label>
+                <input
+                  type="date"
+                  value={syncFromDate}
+                  onChange={(e) => setSyncFromDate(e.target.value)}
+                  disabled={backfillStatus.status === "running"}
+                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-rose-500 transition-all dark:text-white"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
+                  End Date
+                </label>
+                <input
+                  type="date"
+                  value={syncToDate}
+                  onChange={(e) => setSyncToDate(e.target.value)}
+                  disabled={backfillStatus.status === "running"}
+                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-rose-500 transition-all dark:text-white"
+                />
+              </div>
+              <div className="pt-2">
+                {backfillStatus.status === "running" ? (
+                  <button
+                    onClick={handlePauseSync}
+                    disabled={statusLoading}
+                    className="w-full py-3 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600 shadow-md shadow-amber-500/10 active:scale-[0.98] transition-all text-sm"
+                  >
+                    Pause Synchronization
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleStartSync}
+                    disabled={statusLoading}
+                    className="w-full py-3 bg-rose-600 text-white rounded-xl font-bold hover:bg-rose-700 shadow-md shadow-rose-600/10 active:scale-[0.98] transition-all text-sm"
+                  >
+                    Start Synchronization
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Sync Progress Status */}
+            <div className="bg-slate-50 dark:bg-slate-950 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 space-y-4 md:col-span-2">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                Synchronization Progress
+              </h4>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
+                  <span className="text-[10px] font-bold uppercase text-slate-400">Status</span>
+                  <p className="text-lg font-black mt-1 capitalize text-rose-600 dark:text-rose-400">
+                    {backfillStatus.status}
+                  </p>
+                </div>
+                <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
+                  <span className="text-[10px] font-bold uppercase text-slate-400">Current Day</span>
+                  <p className="text-lg font-black mt-1 text-slate-800 dark:text-slate-100">
+                    {backfillStatus.currentDate || "—"}
+                  </p>
+                </div>
+                <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
+                  <span className="text-[10px] font-bold uppercase text-slate-400">Days Synced</span>
+                  <p className="text-lg font-black mt-1 text-slate-800 dark:text-slate-100">
+                    {backfillStatus.completedDays} / {backfillStatus.totalDays}
+                  </p>
+                </div>
+                <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
+                  <span className="text-[10px] font-bold uppercase text-slate-400">Documents Cached</span>
+                  <p className="text-lg font-black mt-1 text-slate-800 dark:text-slate-100">
+                    {backfillStatus.totalSaved}
+                  </p>
+                </div>
+              </div>
+
+              {backfillStatus.status === "running" || backfillStatus.status === "paused" || backfillStatus.status === "completed" ? (
+                <div className="space-y-2 pt-2">
+                  <div className="flex justify-between text-xs font-bold text-slate-500">
+                    <span>Overall Progress</span>
+                    <span>
+                      {backfillStatus.totalDays > 0
+                        ? `${Math.round((backfillStatus.completedDays / backfillStatus.totalDays) * 100)}%`
+                        : "0%"}
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-200 dark:bg-slate-800 h-3 rounded-full overflow-hidden">
+                    <div
+                      className="bg-rose-600 h-full transition-all duration-500 rounded-full"
+                      style={{
+                        width: `${
+                          backfillStatus.totalDays > 0
+                            ? (backfillStatus.completedDays / backfillStatus.totalDays) * 100
+                            : 0
+                        }%`,
+                      }}
+                    ></div>
+                  </div>
+                  {backfillStatus.rangeStart && (
+                    <p className="text-[10px] text-slate-400 italic">
+                      Target Range: {backfillStatus.rangeStart} to {backfillStatus.rangeEnd}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center justify-center py-8 text-sm text-slate-400 italic">
+                  Synchronization is currently idle. Configure a range on the left and click "Start Sync" to begin.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-slate-50 dark:bg-slate-950 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 space-y-4">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+              Important Caching Guidelines
+            </h4>
+            <ul className="list-disc pl-5 text-xs text-slate-500 dark:text-slate-400 space-y-1.5 leading-relaxed">
+              <li><strong>Safe Speeds</strong>: The sync fetches 4 venues concurrently and delays requests slightly. A one-month sync covers ~120 API requests per store and takes about 1-2 minutes to complete.</li>
+              <li><strong>Offline Availability</strong>: Once a day is marked as cached in Firestore, your dashboard, manual exports, and automated daily mailing distributions will load immediately without querying the external LingaPOS servers.</li>
+              <li><strong>Resiliency</strong>: If you pause or close the dashboard, you can resume later. The system skips already-cached days automatically.</li>
+            </ul>
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* FORM SIDE */}
         <div className="lg:col-span-5 space-y-6">
           <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
@@ -1118,8 +1387,9 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
           )}
         </div>
       </div>
-    </div>
-  );
+    )}
+  </div>
+);
 };
 
 export default SettingsModule;

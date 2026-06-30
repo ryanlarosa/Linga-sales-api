@@ -7,7 +7,7 @@ import nodemailer from 'nodemailer';
 import { google } from 'googleapis';
 import { Readable } from 'stream';
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { initializeFirestore, memoryLocalCache, doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
+import { initializeFirestore, memoryLocalCache, doc, getDoc, setDoc, deleteDoc, collection, getDocs } from 'firebase/firestore';
 
 const app = express();
 
@@ -406,6 +406,216 @@ app.get('/api/v1/lingapos/store/:storeId/saleSummaryReport', async (req, res) =>
         res.json(combinedData);
     } catch (error) {
         res.status(error.status || 500).json(error.data || { error: error.message });
+    }
+});
+
+let isBackfillPaused = false;
+let isBackfillRunning = false;
+
+function chunkArray(array, size) {
+    const result = [];
+    for (let i = 0; i < array.length; i += size) {
+        result.push(array.slice(i, i + size));
+    }
+    return result;
+}
+
+async function executeBackfill(fromDateStr, toDateStr) {
+    isBackfillRunning = true;
+    isBackfillPaused = false;
+    
+    try {
+        await setDoc(doc(db, 'configs', 'backfill_status'), {
+            status: "running",
+            completedDays: 0,
+            totalDays: 0,
+            currentDate: fromDateStr,
+            rangeStart: fromDateStr,
+            rangeEnd: toDateStr,
+            totalSaved: 0,
+            updatedAt: new Date().toISOString()
+        });
+
+        // 1. Get stores list from Firestore
+        let stores = [];
+        const snapshot = await getDocs(collection(db, 'stores'));
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            stores.push({ id: data.id, name: data.name });
+        });
+        if (stores.length === 0) {
+            stores = DEFAULT_STORES;
+        }
+
+        // 2. Generate date range
+        const dates = getDatesInRange(fromDateStr, toDateStr);
+        const totalDays = dates.length;
+        let completedDays = 0;
+        let totalSaved = 0;
+
+        for (const dateStr of dates) {
+            if (isBackfillPaused) {
+                console.log(`[Backfill] Paused at date: ${dateStr}`);
+                isBackfillRunning = false;
+                await setDoc(doc(db, 'configs', 'backfill_status'), {
+                    status: "paused",
+                    completedDays,
+                    totalDays,
+                    currentDate: dateStr,
+                    rangeStart: fromDateStr,
+                    rangeEnd: toDateStr,
+                    totalSaved,
+                    updatedAt: new Date().toISOString()
+                });
+                return;
+            }
+
+            console.log(`[Backfill] Syncing day: ${dateStr} (${completedDays + 1}/${totalDays})`);
+
+            // Fetch stores in parallel chunks of 4
+            const storeChunks = chunkArray(stores, 4);
+            for (const chunk of storeChunks) {
+                if (isBackfillPaused) break;
+
+                await Promise.all(chunk.map(async (store) => {
+                    const cacheKey = `${store.id}_${dateStr}`;
+                    
+                    const cacheCollections = [
+                        { name: 'sales_cache', endpoint: `/v1/lingapos/store/${store.id}/getsale`, params: { fromDate: formatToLingaDate(dateStr), toDate: formatToLingaDate(dateStr) }, pruneFn: pruneSalesData },
+                        { name: 'discounts_cache', endpoint: `/v1/lingapos/store/${store.id}/discountReport`, params: { dateOption: 'DR', fromDate: formatToLingaDate(dateStr), toDate: formatToLingaDate(dateStr), selectedReportType: 'By Discount Type' }, pruneFn: pruneDiscountData },
+                        { name: 'sale_reports_cache', endpoint: `/v1/lingapos/store/${store.id}/saleReport`, params: { dateOption: 'DR', employeeGroup: 'N', fromDate: formatToLingaDate(dateStr), toDate: formatToLingaDate(dateStr), isDetailedView: 'false', numberOfDay: '', page: 1, reportType: '', selectedEmployee: '', selectedItemId: '', specificDate: '', type: 'MENUITEM' }, pruneFn: pruneSaleReportData },
+                        { name: 'sale_summaries_cache', endpoint: `/v1/lingapos/store/${store.id}/saleSummaryReport`, params: { dateOption: 'DR', fromDate: formatToLingaDate(dateStr), toDate: formatToLingaDate(dateStr) }, pruneFn: pruneSummaryData }
+                    ];
+
+                    for (const col of cacheCollections) {
+                        if (isBackfillPaused) break;
+                        const docRef = doc(db, col.name, cacheKey);
+                        try {
+                            const snap = await getDoc(docRef);
+                            if (snap.exists()) continue;
+
+                            const response = await callExternalApi(`${LINGAPOS_BASE_URL}${col.endpoint}`, col.params);
+                            const pruned = col.pruneFn ? col.pruneFn(response.data) : response.data;
+                            
+                            await setDoc(docRef, {
+                                storeId: store.id,
+                                date: dateStr,
+                                data: pruned,
+                                createdAt: new Date().toISOString()
+                            });
+                            totalSaved++;
+                            
+                            await new Promise(resolve => setTimeout(resolve, 200));
+                        } catch (err) {
+                            console.error(`[Backfill Err] Store ${store.name} Date ${dateStr} Col ${col.name}:`, err.message);
+                        }
+                    }
+                }));
+            }
+
+            completedDays++;
+            
+            await setDoc(doc(db, 'configs', 'backfill_status'), {
+                status: isBackfillPaused ? "paused" : "running",
+                completedDays,
+                totalDays,
+                currentDate: dateStr,
+                rangeStart: fromDateStr,
+                rangeEnd: toDateStr,
+                totalSaved,
+                updatedAt: new Date().toISOString()
+            });
+        }
+
+        isBackfillRunning = false;
+        await setDoc(doc(db, 'configs', 'backfill_status'), {
+            status: "completed",
+            completedDays,
+            totalDays,
+            currentDate: toDateStr,
+            rangeStart: fromDateStr,
+            rangeEnd: toDateStr,
+            totalSaved,
+            updatedAt: new Date().toISOString()
+        });
+        console.log(`[Backfill] Completed successfully! Saved ${totalSaved} documents.`);
+    } catch (error) {
+        console.error("[Backfill Error] Main execution loop failed:", error);
+        isBackfillRunning = false;
+        await setDoc(doc(db, 'configs', 'backfill_status'), {
+            status: "failed",
+            error: error.message,
+            updatedAt: new Date().toISOString()
+        });
+    }
+}
+
+// --- Backfill API Endpoints ---
+app.post('/api/v1/backfill/start', async (req, res) => {
+    const { fromDate, toDate } = req.body;
+    if (!fromDate || !toDate) {
+        return res.status(400).json({ error: "fromDate and toDate parameters are required in the body." });
+    }
+    if (isBackfillRunning) {
+        return res.status(400).json({ error: "A backfill process is already running." });
+    }
+    
+    executeBackfill(fromDate, toDate);
+    res.json({ message: "Backfill started in the background." });
+});
+
+app.post('/api/v1/backfill/pause', async (req, res) => {
+    isBackfillPaused = true;
+    res.json({ message: "Backfill pausing signal sent." });
+});
+
+app.get('/api/v1/backfill/status', async (req, res) => {
+    try {
+        const snap = await getDoc(doc(db, 'configs', 'backfill_status'));
+        if (snap.exists()) {
+            return res.json(snap.data());
+        }
+        res.json({ status: "idle", completedDays: 0, totalDays: 0, currentDate: "", totalSaved: 0 });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/v1/backfill/reset', async (req, res) => {
+    if (isBackfillRunning) {
+        return res.status(400).json({ error: "Cannot reset cache while backfill is running. Please pause it first." });
+    }
+    try {
+        console.log("[Backfill] Wiping all cache collections from Firestore...");
+        
+        const wipeCollection = async (colName) => {
+            const snap = await getDocs(collection(db, colName));
+            const deletePromises = [];
+            snap.forEach(d => {
+                deletePromises.push(deleteDoc(d.ref));
+            });
+            await Promise.all(deletePromises);
+        };
+        
+        await Promise.all([
+            wipeCollection('sales_cache'),
+            wipeCollection('discounts_cache'),
+            wipeCollection('sale_reports_cache'),
+            wipeCollection('sale_summaries_cache')
+        ]);
+        
+        await setDoc(doc(db, 'configs', 'backfill_status'), {
+            status: "idle",
+            completedDays: 0,
+            totalDays: 0,
+            currentDate: "",
+            totalSaved: 0,
+            updatedAt: new Date().toISOString()
+        });
+        
+        res.json({ message: "All Firestore cache collections cleared successfully." });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 
