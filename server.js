@@ -804,22 +804,30 @@ async function generateExcelBuffer(trendData, totals, selectedDate, anchorDates)
 
   const dayOfWeek = new Date(anchorDates[0]).toLocaleDateString('en-US', { weekday: 'long' });
 
-  // Add titles
-  worksheet.addRow([]);
-  
-  // Row 5: Primary headers
-  const row5 = worksheet.addRow([
+  // Row 1: Report Date
+  const dateStrRow = worksheet.addRow([`Report Date: ${selectedDate}`]);
+  dateStrRow.getCell(1).font = { name: 'Arial', size: 10, italic: true, color: { argb: 'FF475569' } };
+  dateStrRow.height = 20;
+
+  // Row 2: Primary headers
+  const row2 = worksheet.addRow([
     'Daily Covers tracker',
     `Actuals - ${dayOfWeek}`,
-    '', '', '', // B5:E5
+    '', '', '', // B2:E2
     'Variance This Wk vs:',
-    '', '' // F5:H5
+    '', '' // F2:H2
   ]);
-  worksheet.mergeCells('B5:E5');
-  worksheet.mergeCells('F5:H5');
+  worksheet.mergeCells('B2:E2');
+  worksheet.mergeCells('F2:H2');
 
-  // Row 6: Sub-headers
-  const row6 = worksheet.addRow([
+  // Row 3: Blank
+  worksheet.addRow([]);
+
+  // Row 4: Blank
+  worksheet.addRow([]);
+
+  // Row 5: Venue sub-headers
+  const row5 = worksheet.addRow([
     'Venue',
     'This Wk',
     'Last Wk',
@@ -830,8 +838,8 @@ async function generateExcelBuffer(trendData, totals, selectedDate, anchorDates)
     'Last Yr'
   ]);
 
-  // Row 7: Date rows
-  const row7 = worksheet.addRow([
+  // Row 6: Date rows
+  const row6 = worksheet.addRow([
     '', // Venue column merged
     formatDate(anchorDates[0]),
     formatDate(anchorDates[1]),
@@ -842,15 +850,15 @@ async function generateExcelBuffer(trendData, totals, selectedDate, anchorDates)
     ''  // Merged Last Yr
   ]);
 
-  worksheet.mergeCells('A6:A7');
-  worksheet.mergeCells('F6:F7');
-  worksheet.mergeCells('G6:G7');
-  worksheet.mergeCells('H6:H7');
+  worksheet.mergeCells('A5:A6');
+  worksheet.mergeCells('F5:F6');
+  worksheet.mergeCells('G5:G6');
+  worksheet.mergeCells('H5:H6');
 
-  // Styling Row 5
-  row5.height = 24;
+  // Styling Row 2
+  row2.height = 24;
   for (let col = 1; col <= 8; col++) {
-    const cell = row5.getCell(col);
+    const cell = row2.getCell(col);
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1B365D' } }; // Corporate Navy
     cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
     cell.alignment = {
@@ -859,7 +867,7 @@ async function generateExcelBuffer(trendData, totals, selectedDate, anchorDates)
     };
   }
 
-  // Styling Rows 6 & 7
+  // Styling Rows 5 & 6
   const borderStyle = {
     top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
     bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
@@ -867,9 +875,9 @@ async function generateExcelBuffer(trendData, totals, selectedDate, anchorDates)
     right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
   };
 
+  row5.height = 20;
   row6.height = 20;
-  row7.height = 20;
-  [row6, row7].forEach((r) => {
+  [row5, row6].forEach((r) => {
     for (let col = 1; col <= 8; col++) {
       const cell = r.getCell(col);
       cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FF1B365D' } };
@@ -1199,22 +1207,30 @@ async function generateSalesExcelBuffer(trendData, totals, selectedDate, anchorD
 
   const dayOfWeek = new Date(anchorDates[0]).toLocaleDateString('en-US', { weekday: 'long' });
 
-  // Add titles
-  worksheet.addRow([]);
-  
-  // Row 5: Primary headers
-  const row5 = worksheet.addRow([
+  // Row 1: Report Date
+  const dateStrRow = worksheet.addRow([`Report Date: ${selectedDate}`]);
+  dateStrRow.getCell(1).font = { name: 'Arial', size: 10, italic: true, color: { argb: 'FF475569' } };
+  dateStrRow.height = 20;
+
+  // Row 2: Primary headers
+  const row2 = worksheet.addRow([
     'Daily Sales tracker',
     `Actuals - ${dayOfWeek}`,
-    '', '', '', // B5:E5
+    '', '', '', // B2:E2
     'Variance This Wk vs:',
-    '', '' // F5:H5
+    '', '' // F2:H2
   ]);
-  worksheet.mergeCells('B5:E5');
-  worksheet.mergeCells('F5:H5');
+  worksheet.mergeCells('B2:E2');
+  worksheet.mergeCells('F2:H2');
 
-  // Row 6: Sub-headers
-  const row6 = worksheet.addRow([
+  // Row 3: Blank
+  worksheet.addRow([]);
+
+  // Row 4: Blank
+  worksheet.addRow([]);
+
+  // Row 5: Venue sub-headers
+  const row5 = worksheet.addRow([
     'Venue',
     'This Wk',
     'Last Wk',
@@ -1225,8 +1241,8 @@ async function generateSalesExcelBuffer(trendData, totals, selectedDate, anchorD
     'Last Yr'
   ]);
 
-  // Row 7: Date rows
-  const row7 = worksheet.addRow([
+  // Row 6: Date rows
+  const row6 = worksheet.addRow([
     '', // Venue column merged
     formatDate(anchorDates[0]),
     formatDate(anchorDates[1]),
@@ -1237,15 +1253,15 @@ async function generateSalesExcelBuffer(trendData, totals, selectedDate, anchorD
     ''  // Merged Last Yr
   ]);
 
-  worksheet.mergeCells('A6:A7');
-  worksheet.mergeCells('F6:F7');
-  worksheet.mergeCells('G6:G7');
-  worksheet.mergeCells('H6:H7');
+  worksheet.mergeCells('A5:A6');
+  worksheet.mergeCells('F5:F6');
+  worksheet.mergeCells('G5:G6');
+  worksheet.mergeCells('H5:H6');
 
-  // Styling Row 5
-  row5.height = 24;
+  // Styling Row 2
+  row2.height = 24;
   for (let col = 1; col <= 8; col++) {
-    const cell = row5.getCell(col);
+    const cell = row2.getCell(col);
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1B365D' } }; // Corporate Navy
     cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
     cell.alignment = {
@@ -1254,7 +1270,7 @@ async function generateSalesExcelBuffer(trendData, totals, selectedDate, anchorD
     };
   }
 
-  // Styling Rows 6 & 7
+  // Styling Rows 5 & 6
   const borderStyle = {
     top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
     bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
@@ -1262,9 +1278,9 @@ async function generateSalesExcelBuffer(trendData, totals, selectedDate, anchorD
     right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
   };
 
+  row5.height = 20;
   row6.height = 20;
-  row7.height = 20;
-  [row6, row7].forEach((r) => {
+  [row5, row6].forEach((r) => {
     for (let col = 1; col <= 8; col++) {
       const cell = r.getCell(col);
       cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FF1B365D' } };

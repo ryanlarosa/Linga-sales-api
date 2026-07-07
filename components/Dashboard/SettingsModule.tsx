@@ -101,6 +101,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
 
   // Store Form State
   const [newStore, setNewStore] = useState({ id: "", name: "", brand: "", active: true });
+  const [editingStoreId, setEditingStoreId] = useState<string | null>(null);
 
   // User Form State
   const [isEditingUser, setIsEditingUser] = useState(false);
@@ -249,17 +250,34 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
     }
   };
 
+  const handleStartEditStore = (store: any) => {
+    setEditingStoreId(store.id);
+    setNewStore({
+      id: store.id,
+      name: store.name,
+      brand: store.brand || "",
+      active: store.active !== false
+    });
+  };
+
+  const handleCancelEditStore = () => {
+    setEditingStoreId(null);
+    setNewStore({ id: "", name: "", brand: "", active: true });
+  };
+
   const handleAddStore = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newStore.id || !newStore.name) return;
     setLoading(true);
     try {
       await addStore(newStore);
+      const isEdit = !!editingStoreId;
       setNewStore({ id: "", name: "", brand: "", active: true });
-      setMsg("Store added successfully");
+      setEditingStoreId(null);
+      setMsg(isEdit ? "Store updated successfully" : "Store added successfully");
       fetchData();
     } catch (err) {
-      setMsg("Failed to add store");
+      setMsg("Failed to save store");
     } finally {
       setLoading(false);
       setTimeout(() => setMsg(""), 3000);
@@ -571,7 +589,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
             <h3 className="text-xs font-bold uppercase text-slate-400 mb-6 tracking-wider flex justify-between items-center">
               <span>
                 {tab === "STORES"
-                  ? "New Store Location"
+                  ? (editingStoreId ? `Modify Store: ${newStore.id}` : "New Store Location")
                   : tab === "USERS"
                     ? (isEditingUser ? `Modify Account: ${userForm.username}` : "New User Account")
                     : tab === "AUTOMATION"
@@ -580,6 +598,14 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                         ? "Mailer Configurations"
                         : "Execution Summary"}
               </span>
+              {tab === "STORES" && editingStoreId && (
+                <button
+                  onClick={handleCancelEditStore}
+                  className="text-rose-600 normal-case font-bold hover:underline"
+                >
+                  Cancel Edit
+                </button>
+              )}
               {tab === "USERS" && isEditingUser && (
                 <button
                   onClick={resetUserForm}
@@ -614,8 +640,9 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                     onChange={(e) =>
                       setNewStore({ ...newStore, id: e.target.value })
                     }
+                    disabled={!!editingStoreId}
                     placeholder="Paste ID from Linga Dashboard"
-                    className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-mono dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
+                    className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-mono dark:text-white focus:ring-2 ring-rose-500/20 disabled:opacity-50 outline-none"
                   />
                 </div>
                 <div className="space-y-1">
@@ -653,7 +680,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                   type="submit"
                   className="w-full py-3.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-rose-600/20 transition-all cursor-pointer"
                 >
-                  {loading ? "Processing..." : "Register Store"}
+                  {loading ? "Processing..." : (editingStoreId ? "Update Store" : "Register Store")}
                 </button>
               </form>
             ) : tab === "USERS" ? (
@@ -1345,6 +1372,26 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                                   Cancel
                                 </button>
                               </div>
+                            ) : tab === "STORES" ? (
+                              <button
+                                onClick={() => handleStartEditStore(item)}
+                                className="text-slate-500 hover:text-rose-600 font-black text-[10px] uppercase transition-all flex items-center gap-1"
+                              >
+                                <svg
+                                  className="w-3.5 h-3.5"
+                                  fill="none"
+                                  viewBox="0 0 24 24"
+                                  stroke="currentColor"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M11 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                                  />
+                                </svg>
+                                Edit
+                              </button>
                             ) : tab === "USERS" ? (
                               <>
                                 <button
