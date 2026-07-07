@@ -156,7 +156,9 @@ async function runBackfill() {
         const snapshot = await getDocs(collection(db, 'stores'));
         snapshot.forEach(doc => {
             const data = doc.data();
-            stores.push({ id: data.id, name: data.name });
+            if (data.active !== false) {
+                stores.push({ id: data.id, name: data.name, brand: data.brand || "" });
+            }
         });
     } catch (err) {
         console.error("Failed to read stores collection:", err.message);

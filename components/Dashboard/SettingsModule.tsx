@@ -100,7 +100,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
   });
 
   // Store Form State
-  const [newStore, setNewStore] = useState({ id: "", name: "" });
+  const [newStore, setNewStore] = useState({ id: "", name: "", brand: "", active: true });
 
   // User Form State
   const [isEditingUser, setIsEditingUser] = useState(false);
@@ -255,7 +255,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
     setLoading(true);
     try {
       await addStore(newStore);
-      setNewStore({ id: "", name: "" });
+      setNewStore({ id: "", name: "", brand: "", active: true });
       setMsg("Store added successfully");
       fetchData();
     } catch (err) {
@@ -617,6 +617,36 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                     placeholder="Paste ID from Linga Dashboard"
                     className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-mono dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
                   />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
+                    Brand Name
+                  </label>
+                  <input
+                    value={newStore.brand || ""}
+                    onChange={(e) =>
+                      setNewStore({ ...newStore, brand: e.target.value })
+                    }
+                    placeholder="e.g. Common Grounds, LDC Kitchen+Coffee, etc."
+                    className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
+                  />
+                </div>
+                <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">Active Status</h4>
+                    <p className="text-[10px] text-slate-400 mt-0.5">Toggle to query/sync or ignore this venue location.</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer ml-auto">
+                    <input
+                      type="checkbox"
+                      checked={newStore.active !== false}
+                      onChange={(e) =>
+                        setNewStore({ ...newStore, active: e.target.checked })
+                      }
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-rose-600"></div>
+                  </label>
                 </div>
                 <button
                   disabled={loading}
@@ -1246,9 +1276,25 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                               {item.name || item.username}
                             </p>
                             {tab === "STORES" ? (
-                              <p className="text-[10px] font-mono text-slate-400">
-                                {item.id}
-                              </p>
+                              <div className="space-y-1">
+                                <p className="text-[10px] font-mono text-slate-400">
+                                  ID: {item.id}
+                                </p>
+                                <div className="flex gap-2 items-center">
+                                  <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-black uppercase tracking-wider ${
+                                    item.active !== false
+                                      ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400"
+                                      : "bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400"
+                                  }`}>
+                                    {item.active !== false ? "Active" : "Inactive"}
+                                  </span>
+                                  {item.brand && (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded-md font-black uppercase tracking-wider bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                                      Brand: {item.brand}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
                             ) : (
                               <div className="flex gap-2 items-center mt-1">
                                 <span

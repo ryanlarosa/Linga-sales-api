@@ -318,9 +318,9 @@ export const exportTrendToExcel = async (trendData: any[], totals: any, anchorDa
     { header: 'Last Week', key: 'lastWk', width: 16 },
     { header: 'Last Month', key: 'lastMth', width: 16 },
     { header: 'Last Year', key: 'lastYr', width: 16 },
-    { header: 'Var LW', key: 'varLw', width: 14 },
-    { header: 'Var LM', key: 'varLm', width: 14 },
-    { header: 'Var LY', key: 'varLy', width: 14 },
+    { header: 'Variance LW', key: 'varLw', width: 16 },
+    { header: 'Variance LM', key: 'varLm', width: 16 },
+    { header: 'Variance LY', key: 'varLy', width: 16 },
   ];
 
   const formatDate = (d: Date) => {
@@ -343,9 +343,9 @@ export const exportTrendToExcel = async (trendData: any[], totals: any, anchorDa
     'Last Week',
     'Last Month',
     'Last Year',
-    'Var LW',
-    'Var LM',
-    'Var LY'
+    'Variance LW',
+    'Variance LM',
+    'Variance LY'
   ]);
   const headerRow2 = worksheet.addRow([
     '',
@@ -450,110 +450,156 @@ export const exportTrendToExcel = async (trendData: any[], totals: any, anchorDa
     }
   }
 
-  // Add Venue rows
+  // 1. Group & sequence/sort data by brand
+  const getStoreBrand = (storeName: string, configuredBrand?: string) => {
+    if (configuredBrand) return configuredBrand;
+    const name = storeName.toLowerCase();
+    if (name.includes("common grounds")) return "Common Grounds";
+    if (name.includes("ldc")) return "LDC Kitchen+Coffee";
+    if (name.includes("the sum of us")) return "The Sum of Us";
+    return "Other";
+  };
+
+  const groupedByBrand: { [brand: string]: any[] } = {};
   trendData.forEach((row) => {
-    const rowData = [
-      row.storeName,
-      row.thisWk,
-      row.lastWk,
-      row.lastMth,
-      row.lastYr,
-      row.thisWk - row.lastWk,
-      row.thisWk - row.lastMth,
-      row.thisWk - row.lastYr
-    ];
-    const dataRow = worksheet.addRow(rowData);
-    dataRow.height = 20;
+    const brand = getStoreBrand(row.storeName, row.brand);
+    if (!groupedByBrand[brand]) {
+      groupedByBrand[brand] = [];
+    }
+    groupedByBrand[brand].push(row);
+  });
+
+  const sortedBrands = Object.keys(groupedByBrand).sort();
+  sortedBrands.forEach((brand) => {
+    groupedByBrand[brand].sort((a, b) => a.storeName.localeCompare(b.storeName));
+  });
+
+  // Value formatting helpers
+  const formatVal = (val: number) => val === 0 ? "na" : val;
+  const formatVar = (thisWk: number, otherVal: number) => {
+    if (thisWk === 0 || otherVal === 0) return "na";
+    return thisWk - otherVal;
+  };
+
+  // Write grouped data
+  sortedBrands.forEach((brand) => {
+    // Add Brand Header Row
+    const brandHeader = worksheet.addRow([brand.toUpperCase()]);
+    brandHeader.height = 22;
+    brandHeader.getCell(1).font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF1E293B' } };
+    brandHeader.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
+    brandHeader.getCell(1).alignment = { vertical: 'middle' };
+    worksheet.mergeCells(`A${brandHeader.number}:H${brandHeader.number}`);
+
+    // Add store rows for this brand
+    groupedByBrand[brand].forEach((row) => {
+      const rowData = [
+        row.storeName,
+        formatVal(row.thisWk),
+        formatVal(row.lastWk),
+        formatVal(row.lastMth),
+        formatVal(row.lastYr),
+        formatVar(row.thisWk, row.lastWk),
+        formatVar(row.thisWk, row.lastMth),
+        formatVar(row.thisWk, row.lastYr)
+      ];
+      const dataRow = worksheet.addRow(rowData);
+      dataRow.height = 20;
+
+      for (let col = 1; col <= 8; col++) {
+        const cell = dataRow.getCell(col);
+        cell.font = { name: 'Arial', size: 10, color: { argb: 'FF334155' } };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+        };
+
+        if (col > 1) {
+          cell.alignment = { horizontal: 'right', vertical: 'middle' };
+          const val = cell.value;
+          if (typeof val === 'number') {
+            cell.numFmt = '#,##0';
+          }
+        } else {
+          cell.alignment = { horizontal: 'left', vertical: 'middle' };
+          cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F172A' } };
+        }
+      }
+
+      // Color code venue variance
+      for (let col = 6; col <= 8; col++) {
+        const cell = dataRow.getCell(col);
+        const val = cell.value;
+        if (typeof val === 'number') {
+          cell.numFmt = '+#,##0;-#,##0;0';
+          if (val > 0) {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD1FAE5' } };
+            cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF065F46' } };
+          } else if (val < 0) {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
+            cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF991B1B' } };
+          }
+        }
+      }
+    });
+
+    // Add Brand Total Row
+    const brandThisWk = groupedByBrand[brand].reduce((sum, r) => sum + (r.thisWk || 0), 0);
+    const brandLastWk = groupedByBrand[brand].reduce((sum, r) => sum + (r.lastWk || 0), 0);
+    const brandLastMth = groupedByBrand[brand].reduce((sum, r) => sum + (r.lastMth || 0), 0);
+    const brandLastYr = groupedByBrand[brand].reduce((sum, r) => sum + (r.lastYr || 0), 0);
+
+    const brandTotalRow = worksheet.addRow([
+      `Total ${brand}`,
+      formatVal(brandThisWk),
+      formatVal(brandLastWk),
+      formatVal(brandLastMth),
+      formatVal(brandLastYr),
+      formatVar(brandThisWk, brandLastWk),
+      formatVar(brandThisWk, brandLastMth),
+      formatVar(brandThisWk, brandLastYr)
+    ]);
+    brandTotalRow.height = 20;
 
     for (let col = 1; col <= 8; col++) {
-      const cell = dataRow.getCell(col);
-      cell.font = { name: 'Arial', size: 10, color: { argb: 'FF334155' } };
+      const cell = brandTotalRow.getCell(col);
+      cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF1E293B' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
       cell.border = {
-        top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
-        bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
-        left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
-        right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+        top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
       };
 
       if (col > 1) {
         cell.alignment = { horizontal: 'right', vertical: 'middle' };
-        if (col <= 5) {
+        const val = cell.value;
+        if (typeof val === 'number') {
           cell.numFmt = '#,##0';
         }
       } else {
         cell.alignment = { horizontal: 'left', vertical: 'middle' };
-        cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F172A' } };
       }
     }
 
-    // Color code individual venue variance cells
+    // Color code brand variance
     for (let col = 6; col <= 8; col++) {
-      const cell = dataRow.getCell(col);
-      const val = cell.value as number;
-      cell.numFmt = '+#,##0;-#,##0;0';
-      if (val > 0) {
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD1FAE5' } };
-        cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF065F46' } };
-      } else if (val < 0) {
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
-        cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF991B1B' } };
+      const cell = brandTotalRow.getCell(col);
+      const val = cell.value;
+      if (typeof val === 'number') {
+        cell.numFmt = '+#,##0;-#,##0;0';
+        if (val > 0) {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD1FAE5' } };
+          cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF065F46' } };
+        } else if (val < 0) {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
+          cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF991B1B' } };
+        }
       }
     }
-  });
-
-  // Add second sheet for raw sales data
-  const dataSheet = workbook.addWorksheet('SalesData');
-  dataSheet.views = [{ showGridLines: true }];
-
-  dataSheet.columns = [
-    { header: 'Store', key: 'store', width: 25 },
-    { header: 'Ticket No', key: 'ticket', width: 14 },
-    { header: 'Customer Name', key: 'customer', width: 20 },
-    { header: 'Open Time', key: 'openTime', width: 22 },
-    { header: 'Floor', key: 'floor', width: 12 },
-    { header: 'Table', key: 'table', width: 10 },
-    { header: 'Net Sales', key: 'netSales', width: 14 },
-    { header: 'Total Tax', key: 'tax', width: 12 },
-    { header: 'Discount', key: 'discount', width: 12 },
-    { header: 'Gross Receipt', key: 'gross', width: 14 },
-    { header: 'Guest Count', key: 'guests', width: 12 },
-    { header: 'Date', key: 'date', width: 14 }
-  ];
-
-  const dataHeaderCells = ['A1', 'B1', 'C1', 'D1', 'E1', 'F1', 'G1', 'H1', 'I1', 'J1', 'K1', 'L1'];
-  dataHeaderCells.forEach(cellRef => {
-    const cell = dataSheet.getCell(cellRef);
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
-    cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
-    cell.alignment = { horizontal: 'center', vertical: 'middle' };
-  });
-
-  trendData.forEach(storeRow => {
-    const rawSales = storeRow.salesData || [];
-    rawSales.forEach((sale: any) => {
-      const saleRow = dataSheet.addRow([
-        storeRow.storeName,
-        sale.ticketNo,
-        sale.customerName || 'Walk-in Guest',
-        sale.saleOpenTime,
-        sale.floorNo,
-        sale.tableNo,
-        sale.netSalesVal,
-        sale.taxVal,
-        sale.discountVal,
-        parseNum(sale.grossReceiptStr),
-        sale.guestCount,
-        anchorDate
-      ]);
-
-      for (let col = 7; col <= 10; col++) {
-        const cell = saleRow.getCell(col);
-        cell.numFmt = '"AED" #,##0.00';
-        cell.alignment = { horizontal: 'right' };
-      }
-      saleRow.getCell(11).numFmt = '#,##0';
-      saleRow.getCell(11).alignment = { horizontal: 'right' };
-    });
   });
 
   // Write and download
@@ -587,9 +633,9 @@ export const exportSalesTrendToExcel = async (
     { header: 'Last Week', key: 'lastWk', width: 18 },
     { header: 'Last Month', key: 'lastMth', width: 18 },
     { header: 'Last Year', key: 'lastYr', width: 18 },
-    { header: 'Var LW', key: 'varLw', width: 16 },
-    { header: 'Var LM', key: 'varLm', width: 16 },
-    { header: 'Var LY', key: 'varLy', width: 16 },
+    { header: 'Variance LW', key: 'varLw', width: 18 },
+    { header: 'Variance LM', key: 'varLm', width: 18 },
+    { header: 'Variance LY', key: 'varLy', width: 18 },
   ];
 
   const formatDate = (d: Date) => {
@@ -610,9 +656,9 @@ export const exportSalesTrendToExcel = async (
     'Last Week',
     'Last Month',
     'Last Year',
-    'Var LW',
-    'Var LM',
-    'Var LY'
+    'Variance LW',
+    'Variance LM',
+    'Variance LY'
   ]);
   const headerRow2 = worksheet.addRow([
     '',
@@ -710,16 +756,25 @@ export const exportSalesTrendToExcel = async (
     }
   }
 
-  trendData.forEach((row) => {
+  // Sort trendData by storeName alphabetically
+  const sortedSalesData = [...trendData].sort((a, b) => a.storeName.localeCompare(b.storeName));
+
+  const formatSalesVal = (val: number) => val === 0 ? "na" : val;
+  const formatSalesVar = (thisWk: number, otherVal: number) => {
+    if (thisWk === 0 || otherVal === 0) return "na";
+    return thisWk - otherVal;
+  };
+
+  sortedSalesData.forEach((row) => {
     const rowData = [
       row.storeName,
-      row.thisWk,
-      row.lastWk,
-      row.lastMth,
-      row.lastYr,
-      row.thisWk - row.lastWk,
-      row.thisWk - row.lastMth,
-      row.thisWk - row.lastYr
+      formatSalesVal(row.thisWk),
+      formatSalesVal(row.lastWk),
+      formatSalesVal(row.lastMth),
+      formatSalesVal(row.lastYr),
+      formatSalesVar(row.thisWk, row.lastWk),
+      formatSalesVar(row.thisWk, row.lastMth),
+      formatSalesVar(row.thisWk, row.lastYr)
     ];
     const dataRow = worksheet.addRow(rowData);
     dataRow.height = 20;
@@ -736,7 +791,10 @@ export const exportSalesTrendToExcel = async (
 
       if (col > 1) {
         cell.alignment = { horizontal: 'right', vertical: 'middle' };
-        cell.numFmt = '"AED" #,##0.00';
+        const val = cell.value;
+        if (typeof val === 'number') {
+          cell.numFmt = '"AED" #,##0.00';
+        }
       } else {
         cell.alignment = { horizontal: 'left', vertical: 'middle' };
         cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F172A' } };
@@ -745,14 +803,16 @@ export const exportSalesTrendToExcel = async (
 
     for (let col = 6; col <= 8; col++) {
       const cell = dataRow.getCell(col);
-      const val = cell.value as number;
-      cell.numFmt = '+"AED" #,##0.00;-"AED" #,##0.00;"AED" 0.00';
-      if (val > 0) {
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD1FAE5' } };
-        cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF065F46' } };
-      } else if (val < 0) {
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
-        cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF991B1B' } };
+      const val = cell.value;
+      if (typeof val === 'number') {
+        cell.numFmt = '+"AED" #,##0.00;-"AED" #,##0.00;"AED" 0.00';
+        if (val > 0) {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD1FAE5' } };
+          cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF065F46' } };
+        } else if (val < 0) {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
+          cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF991B1B' } };
+        }
       }
     }
   });

@@ -9,6 +9,8 @@ export interface User {
 export interface Store {
   id: string;
   name: string;
+  brand?: string;
+  active?: boolean;
 }
 
 export interface SaleOrder {
