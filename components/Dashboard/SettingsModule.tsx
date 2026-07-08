@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { User, Store, MailerSettings, ReportLog } from "../../types";
 import {
   getStores,
@@ -102,6 +102,27 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
   // Store Form State
   const [newStore, setNewStore] = useState({ id: "", name: "", brand: "", active: true });
   const [editingStoreId, setEditingStoreId] = useState<string | null>(null);
+
+  const uniqueBrands = useMemo(() => {
+    const brands = new Set<string>();
+    stores.forEach((s: any) => {
+      if (s.brand) brands.add(s.brand);
+    });
+    // Add default brands
+    const defaults = [
+      "Common Grounds",
+      "Encounter Coffee",
+      "The Sum of Us",
+      "Tom and Serg",
+      "Byron Bathers Club",
+      "Splendour Fields",
+      "Hawkerboi",
+      "The Guild Restaurant",
+      "Harvest & Co"
+    ];
+    defaults.forEach(d => brands.add(d));
+    return Array.from(brands).sort();
+  }, [stores]);
 
   // User Form State
   const [isEditingUser, setIsEditingUser] = useState(false);
@@ -645,19 +666,42 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                     className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-mono dark:text-white focus:ring-2 ring-rose-500/20 disabled:opacity-50 outline-none"
                   />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
-                    Brand Name
-                  </label>
-                  <input
-                    value={newStore.brand || ""}
-                    onChange={(e) =>
-                      setNewStore({ ...newStore, brand: e.target.value })
-                    }
-                    placeholder="e.g. Common Grounds, LDC Kitchen+Coffee, etc."
-                    className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
-                  />
-                </div>
+                 <div className="space-y-1">
+                   <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
+                     Brand Name
+                   </label>
+                   <div className="flex flex-col gap-2">
+                     <select
+                       value={uniqueBrands.includes(newStore.brand || "") && (newStore.brand || "") !== "" ? (newStore.brand || "") : (newStore.brand === "" ? "" : "CUSTOM")}
+                       onChange={(e) => {
+                         const val = e.target.value;
+                         if (val === "CUSTOM") {
+                           setNewStore({ ...newStore, brand: "New Brand" });
+                         } else {
+                           setNewStore({ ...newStore, brand: val });
+                         }
+                       }}
+                       className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
+                     >
+                       <option value="">-- No Brand (Other) --</option>
+                       {uniqueBrands.map((b: string) => (
+                         <option key={b} value={b}>{b}</option>
+                       ))}
+                       <option value="CUSTOM">-- Create New Custom Brand --</option>
+                     </select>
+                     
+                     {(!uniqueBrands.includes(newStore.brand || "") || newStore.brand === "New Brand" || !uniqueBrands.includes(newStore.brand)) && newStore.brand !== "" && (
+                       <input
+                         value={newStore.brand === "New Brand" ? "" : newStore.brand}
+                         onChange={(e) =>
+                           setNewStore({ ...newStore, brand: e.target.value })
+                         }
+                         placeholder="Enter custom brand name..."
+                         className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
+                       />
+                     )}
+                   </div>
+                 </div>
                 <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
                   <div>
                     <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">Active Status</h4>
