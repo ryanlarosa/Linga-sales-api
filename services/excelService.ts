@@ -313,14 +313,14 @@ export const exportTrendToExcel = async (trendData: any[], totals: any, anchorDa
 
   // Set column widths
   worksheet.columns = [
-    { header: 'Venue Name', key: 'venue', width: 32 },
-    { header: 'Selected Day', key: 'thisWk', width: 16 },
-    { header: 'Last Week', key: 'lastWk', width: 16 },
-    { header: 'Last Month', key: 'lastMth', width: 16 },
-    { header: 'Last Year', key: 'lastYr', width: 16 },
-    { header: 'Variance LW', key: 'varLw', width: 16 },
-    { header: 'Variance LM', key: 'varLm', width: 16 },
-    { header: 'Variance LY', key: 'varLy', width: 16 },
+    { key: 'venue', width: 32 },
+    { key: 'thisWk', width: 16 },
+    { key: 'lastWk', width: 16 },
+    { key: 'lastMth', width: 16 },
+    { key: 'lastYr', width: 16 },
+    { key: 'varLw', width: 16 },
+    { key: 'varLm', width: 16 },
+    { key: 'varLy', width: 16 },
   ];
 
   const formatDate = (d: Date) => {
@@ -716,14 +716,14 @@ export const exportSalesTrendToExcel = async (
   worksheet.views = [{ showGridLines: true }];
 
   worksheet.columns = [
-    { header: 'Venue Name', key: 'venue', width: 32 },
-    { header: 'Selected Day', key: 'thisWk', width: 18 },
-    { header: 'Last Week', key: 'lastWk', width: 18 },
-    { header: 'Last Month', key: 'lastMth', width: 18 },
-    { header: 'Last Year', key: 'lastYr', width: 18 },
-    { header: 'Variance LW', key: 'varLw', width: 18 },
-    { header: 'Variance LM', key: 'varLm', width: 18 },
-    { header: 'Variance LY', key: 'varLy', width: 18 },
+    { key: 'venue', width: 32 },
+    { key: 'thisWk', width: 18 },
+    { key: 'lastWk', width: 18 },
+    { key: 'lastMth', width: 18 },
+    { key: 'lastYr', width: 18 },
+    { key: 'varLw', width: 18 },
+    { key: 'varLm', width: 18 },
+    { key: 'varLy', width: 18 },
   ];
 
   const formatDate = (d: Date) => {
