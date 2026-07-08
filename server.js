@@ -678,15 +678,15 @@ async function fetchStoreTrendSummaryBackend(storeId, dates) {
   const results = {};
 
   const formatDateString = (d) => {
-    const day = String(d.getDate()).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
     const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
-    return `${day}-${months[d.getMonth()]}-${d.getFullYear()}`;
+    return `${day}-${months[d.getUTCMonth()]}-${d.getUTCFullYear()}`;
   };
 
   const formatDateParam = (d) => {
-    const day = String(d.getDate()).padStart(2, '0');
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const year = d.getFullYear();
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const year = d.getUTCFullYear();
     return `${day}-${month}-${year}`;
   };
 
@@ -704,9 +704,9 @@ async function fetchStoreTrendSummaryBackend(storeId, dates) {
       const dateKey = formatDateString(date);
 
       // YYYY-MM-DD for Cache doc key
-      const yyyy = date.getFullYear();
-      const mm = String(date.getMonth() + 1).padStart(2, "0");
-      const dd = String(date.getDate()).padStart(2, "0");
+      const yyyy = date.getUTCFullYear();
+      const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
+      const dd = String(date.getUTCDate()).padStart(2, "0");
       const dateStrIso = `${yyyy}-${mm}-${dd}`;
 
       try {
@@ -799,10 +799,10 @@ async function generateExcelBuffer(trendData, totals, selectedDate, anchorDates)
 
   const formatDate = (d) => {
     const dateObj = new Date(d);
-    return `${String(dateObj.getDate()).padStart(2, '0')}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getFullYear()).slice(-2)}`;
+    return `${String(dateObj.getUTCDate()).padStart(2, '0')}-${String(dateObj.getUTCMonth() + 1).padStart(2, '0')}-${String(dateObj.getUTCFullYear()).slice(-2)}`;
   };
 
-  const dayOfWeek = new Date(anchorDates[0]).toLocaleDateString('en-US', { weekday: 'long' });
+  const dayOfWeek = new Date(anchorDates[0]).toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' });
 
   // Row 1: Report Date
   const dateStrRow = worksheet.addRow([`Report Date: ${selectedDate}`]);
@@ -1202,10 +1202,10 @@ async function generateSalesExcelBuffer(trendData, totals, selectedDate, anchorD
 
   const formatDate = (d) => {
     const dateObj = new Date(d);
-    return `${String(dateObj.getDate()).padStart(2, '0')}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getFullYear()).slice(-2)}`;
+    return `${String(dateObj.getUTCDate()).padStart(2, '0')}-${String(dateObj.getUTCMonth() + 1).padStart(2, '0')}-${String(dateObj.getUTCFullYear()).slice(-2)}`;
   };
 
-  const dayOfWeek = new Date(anchorDates[0]).toLocaleDateString('en-US', { weekday: 'long' });
+  const dayOfWeek = new Date(anchorDates[0]).toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' });
 
   // Row 1: Report Date
   const dateStrRow = worksheet.addRow([`Report Date: ${selectedDate}`]);
@@ -1909,15 +1909,15 @@ app.post('/api/v1/reports/email-sales-tracker', async (req, res) => {
 async function fetchStoreSalesBackend(storeId, dates) {
   const results = {};
   const formatDateParam = (d) => {
-    const day = String(d.getDate()).padStart(2, '0');
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const year = d.getFullYear();
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const year = d.getUTCFullYear();
     return `${day}-${month}-${year}`;
   };
   const formatDateString = (d) => {
-    const day = String(d.getDate()).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
     const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
-    return `${day}-${months[d.getMonth()]}-${d.getFullYear()}`;
+    return `${day}-${months[d.getUTCMonth()]}-${d.getUTCFullYear()}`;
   };
   const parseFloatVal = (val) => {
     if (typeof val === 'number') return val;
@@ -2023,23 +2023,25 @@ app.get('/api/v1/cron/daily-cover-tracker', async (req, res) => {
         console.log("[Cron] Running scheduled Daily Report generation...");
 
         // 5. Resolve anchor date (yesterday)
+        // 5. Resolve anchor date (yesterday)
         const today = new Date();
-        today.setDate(today.getDate() - 1);
+        today.setUTCDate(today.getUTCDate() - 1);
+        today.setUTCHours(0, 0, 0, 0);
         const selectedDate = today.toISOString().split('T')[0];
 
         // 3. Calculate 4 anchor dates
         const lastWk = new Date(today);
-        lastWk.setDate(today.getDate() - 7);
+        lastWk.setUTCDate(today.getUTCDate() - 7);
         const lastMth = new Date(today);
-        lastMth.setDate(today.getDate() - 28);
+        lastMth.setUTCDate(today.getUTCDate() - 28);
         const lastYr = new Date(today);
-        lastYr.setDate(today.getDate() - 364);
+        lastYr.setUTCDate(today.getUTCDate() - 364);
         const anchorDates = [today, lastWk, lastMth, lastYr];
 
         const formatDateString = (d) => {
-          const day = String(d.getDate()).padStart(2, '0');
+          const day = String(d.getUTCDate()).padStart(2, '0');
           const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
-          return `${day}-${months[d.getMonth()]}-${d.getFullYear()}`;
+          return `${day}-${months[d.getUTCMonth()]}-${d.getUTCFullYear()}`;
         };
 
         // 4. Fetch stores
