@@ -124,6 +124,15 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
     return Array.from(brands).sort();
   }, [stores]);
 
+
+  const selectBrandValue = useMemo(() => {
+    if (!newStore.brand) return "";
+    if (uniqueBrands.includes(newStore.brand)) return newStore.brand;
+    return "CUSTOM";
+  }, [newStore.brand, uniqueBrands]);
+
+  const showCustomBrandInput = newStore.brand !== "" && !uniqueBrands.includes(newStore.brand || "");
+
   // User Form State
   const [isEditingUser, setIsEditingUser] = useState(false);
   const [userForm, setUserForm] = useState<Partial<User>>({
@@ -672,7 +681,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                    </label>
                    <div className="flex flex-col gap-2">
                      <select
-                       value={uniqueBrands.includes(newStore.brand || "") && (newStore.brand || "") !== "" ? (newStore.brand || "") : (newStore.brand === "" ? "" : "CUSTOM")}
+                       value={selectBrandValue}
                        onChange={(e) => {
                          const val = e.target.value;
                          if (val === "CUSTOM") {
@@ -690,7 +699,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                        <option value="CUSTOM">-- Create New Custom Brand --</option>
                      </select>
                      
-                     {(!uniqueBrands.includes(newStore.brand || "") || newStore.brand === "New Brand" || !uniqueBrands.includes(newStore.brand)) && newStore.brand !== "" && (
+                     {showCustomBrandInput && (
                        <input
                          value={newStore.brand === "New Brand" ? "" : newStore.brand}
                          onChange={(e) =>
