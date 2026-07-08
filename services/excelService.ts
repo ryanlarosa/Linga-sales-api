@@ -486,6 +486,7 @@ export const exportTrendToExcel = async (trendData: any[], totals: any, anchorDa
     if (name.includes("common grounds")) return "Common Grounds";
     if (name.includes("ldc")) return "LDC Kitchen+Coffee";
     if (name.includes("the sum of us")) return "The Sum of Us";
+    if (name.includes("encounter coffee")) return "Encounter Coffee";
     return "Other";
   };
 

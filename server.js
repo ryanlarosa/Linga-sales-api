@@ -961,6 +961,7 @@ async function generateExcelBuffer(trendData, totals, selectedDate, anchorDates)
     if (name.includes("common grounds")) return "Common Grounds";
     if (name.includes("ldc")) return "LDC Kitchen+Coffee";
     if (name.includes("the sum of us")) return "The Sum of Us";
+    if (name.includes("encounter coffee")) return "Encounter Coffee";
     return "Other";
   };
 
@@ -2074,6 +2075,7 @@ app.get('/api/v1/cron/daily-cover-tracker', async (req, res) => {
                     const storeData = {
                         storeId: store.id,
                         storeName: store.name,
+                        brand: store.brand,
                         thisWk: summary[formatDateString(anchorDates[0])]?.covers || 0,
                         lastWk: summary[formatDateString(anchorDates[1])]?.covers || 0,
                         lastMth: summary[formatDateString(anchorDates[2])]?.covers || 0,
@@ -2143,6 +2145,7 @@ app.get('/api/v1/cron/daily-cover-tracker', async (req, res) => {
                     const storeData = {
                         storeId: store.id,
                         storeName: store.name,
+                        brand: store.brand,
                         thisWk: salesSummary[formatDateString(anchorDates[0])]?.netSales || 0,
                         lastWk: salesSummary[formatDateString(anchorDates[1])]?.netSales || 0,
                         lastMth: salesSummary[formatDateString(anchorDates[2])]?.netSales || 0,

@@ -18,6 +18,7 @@ interface TrendModuleProps {
 interface StoreTrendData {
   storeId: string;
   storeName: string;
+  brand?: string;
   thisWk: number;
   lastWk: number;
   lastMth: number;
@@ -124,6 +125,7 @@ const TrendModule: React.FC<TrendModuleProps> = ({ storeList, theme, anchorDate 
         results.push({
           storeId: store.id,
           storeName: store.name,
+          brand: store.brand,
           thisWk: summary[formatDate(dates[0])]?.covers || 0,
           lastWk: summary[formatDate(dates[1])]?.covers || 0,
           lastMth: summary[formatDate(dates[2])]?.covers || 0,
