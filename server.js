@@ -2005,18 +2005,26 @@ app.get('/api/v1/cron/daily-cover-tracker', async (req, res) => {
             return res.json({ success: true, message: "Daily automation is disabled in settings." });
         }
 
-        // 4. Check hour match (Dubai Time GST / UTC+4)
+        // 4. Check time match (Dubai Time GST / UTC+4)
         const isForced = req.query.force === 'true';
         if (!isForced) {
-            const targetHour = parseInt(settings.fetchTime.split(':')[0], 10);
+            const [targetHour, targetMinute] = (settings.fetchTime || "08:00").split(':').map(Number);
+            
             const dubaiTimeStr = new Date().toLocaleString("en-US", { timeZone: "Asia/Dubai" });
-            const dubaiHour = new Date(dubaiTimeStr).getHours();
+            const dubaiDate = new Date(dubaiTimeStr);
+            const dubaiHour = dubaiDate.getHours();
+            const dubaiMinute = dubaiDate.getMinutes();
 
-            if (dubaiHour !== targetHour) {
-                console.log(`[Cron] Skipping: Dubai hour is ${dubaiHour}, configured hour is ${targetHour}.`);
+            const currentMinOfDay = dubaiHour * 60 + dubaiMinute;
+            const targetMinOfDay = targetHour * 60 + targetMinute;
+
+            // Check if current time has passed the target time and is within a 10-minute execution window
+            const diff = currentMinOfDay - targetMinOfDay;
+            if (diff < 0 || diff >= 10) {
+                console.log(`[Cron] Skipping: Dubai time is ${dubaiHour}:${dubaiMinute}, configured time is ${settings.fetchTime}.`);
                 return res.json({
                     success: true,
-                    message: `Skipped: current Dubai hour (${dubaiHour}) does not match configured automation hour (${targetHour}).`
+                    message: `Skipped: current Dubai time (${dubaiHour}:${dubaiMinute}) does not match configured automation time (${settings.fetchTime}).`
                 });
             }
         }

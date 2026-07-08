@@ -900,27 +900,12 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                         <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
                           Report Distribution Time (Dubai Time / UTC+4)
                         </label>
-                        <select
+                        <input
+                          type="time"
                           value={autoSettings.fetchTime}
                           onChange={(e) => setAutoSettings({ ...autoSettings, fetchTime: e.target.value })}
                           className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
-                        >
-                          {Array.from({ length: 24 }).map((_, idx) => {
-                            const hour = String(idx).padStart(2, "0");
-                            const label = idx === 0 
-                              ? "12:00 AM (Midnight)" 
-                              : idx === 12 
-                                ? "12:00 PM (Noon)" 
-                                : idx < 12 
-                                  ? `${idx}:00 AM` 
-                                  : `${idx - 12}:00 PM`;
-                            return (
-                              <option key={hour} value={`${hour}:00`}>
-                                {label}
-                              </option>
-                            );
-                          })}
-                        </select>
+                        />
                       </div>
                     </>
                   )}
