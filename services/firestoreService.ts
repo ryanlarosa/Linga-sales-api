@@ -184,8 +184,10 @@ export const getStores = async (): Promise<Store[]> => {
     snapshot.forEach((doc: QueryDocumentSnapshot<DocumentData>) => {
       const data = doc.data();
       stores.push({
-        id: data.id,
-        name: data.name
+        id: data.id || doc.id,
+        name: data.name,
+        brand: data.brand,
+        active: data.active !== false
       });
     });
     
