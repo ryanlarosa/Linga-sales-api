@@ -974,7 +974,26 @@ async function generateExcelBuffer(trendData, totals, selectedDate, anchorDates)
     groupedByBrand[brand].push(row);
   });
 
-  const sortedBrands = Object.keys(groupedByBrand).sort();
+  let brandOrder = [];
+  try {
+    const orderDoc = await getDoc(doc(db, "configs", "brand_order"));
+    if (orderDoc.exists()) {
+      brandOrder = orderDoc.data().brands || [];
+    }
+  } catch (e) {
+    console.error("Failed to fetch brand order:", e.message);
+  }
+
+  const sortedBrands = Object.keys(groupedByBrand).sort((a, b) => {
+    if (a === "Other") return 1;
+    if (b === "Other") return -1;
+    const idxA = brandOrder.indexOf(a);
+    const idxB = brandOrder.indexOf(b);
+    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+    if (idxA !== -1) return -1;
+    if (idxB !== -1) return 1;
+    return a.localeCompare(b);
+  });
   sortedBrands.forEach((brand) => {
     groupedByBrand[brand].sort((a, b) => a.storeName.localeCompare(b.storeName));
   });

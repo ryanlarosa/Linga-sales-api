@@ -1,6 +1,7 @@
 import * as XLSX from "xlsx";
 import ExcelJS from "exceljs";
 import { FetchedData } from "../types";
+import { getBrandOrder } from "./firestoreService";
 
 const parseNum = (val: string | number | undefined | null): number => {
   if (typeof val === "number") return val;
@@ -499,7 +500,17 @@ export const exportTrendToExcel = async (trendData: any[], totals: any, anchorDa
     groupedByBrand[brand].push(row);
   });
 
-  const sortedBrands = Object.keys(groupedByBrand).sort();
+  const brandOrder = await getBrandOrder();
+  const sortedBrands = Object.keys(groupedByBrand).sort((a, b) => {
+    if (a === "Other") return 1;
+    if (b === "Other") return -1;
+    const idxA = brandOrder.indexOf(a);
+    const idxB = brandOrder.indexOf(b);
+    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+    if (idxA !== -1) return -1;
+    if (idxB !== -1) return 1;
+    return a.localeCompare(b);
+  });
   sortedBrands.forEach((brand) => {
     groupedByBrand[brand].sort((a, b) => a.storeName.localeCompare(b.storeName));
   });

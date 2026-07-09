@@ -282,3 +282,27 @@ export const addReportLog = async (log: ReportLog): Promise<void> => {
     throw error;
   }
 };
+
+export const getBrandOrder = async (): Promise<string[]> => {
+  try {
+    const docRef = doc(db, "configs", "brand_order");
+    const snapshot = await getDoc(docRef);
+    if (snapshot.exists()) {
+      return snapshot.data().brands || [];
+    }
+    return [];
+  } catch (error) {
+    console.error("Error getting brand order:", error);
+    return [];
+  }
+};
+
+export const updateBrandOrder = async (brands: string[]): Promise<void> => {
+  try {
+    const docRef = doc(db, "configs", "brand_order");
+    await setDoc(docRef, { brands });
+  } catch (error) {
+    console.error("Error updating brand order:", error);
+    throw error;
+  }
+};

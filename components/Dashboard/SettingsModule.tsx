@@ -13,6 +13,8 @@ import {
   getMailerSettings,
   updateMailerSettings,
   getReportLogs,
+  getBrandOrder,
+  updateBrandOrder,
 } from "../../services/firestoreService";
 
 interface SettingsModuleProps {
@@ -20,7 +22,8 @@ interface SettingsModuleProps {
 }
 
 const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
-  const [tab, setTab] = useState<"STORES" | "USERS" | "AUTOMATION" | "MAILER" | "LOGS" | "CACHING">("STORES");
+  const [tab, setTab] = useState<"STORES" | "USERS" | "AUTOMATION" | "MAILER" | "LOGS" | "CACHING" | "BRANDS">("STORES");
+  const [orderedBrands, setOrderedBrands] = useState<string[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [reportLogs, setReportLogs] = useState<ReportLog[]>([]);
@@ -149,12 +152,13 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [s, u, auto, mailer, logs] = await Promise.all([
+      const [s, u, auto, mailer, logs, order] = await Promise.all([
         getStores(),
         getUsers(),
         getAutomationSettings(),
         getMailerSettings(),
         getReportLogs(),
+        getBrandOrder(),
       ]);
       setStores(s || []);
       setUsers(u || []);
@@ -176,6 +180,28 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
           ...mailer
         });
       }
+
+      let initialOrder = order || [];
+      if (initialOrder.length === 0 && s) {
+        const brandsSet = new Set<string>();
+        s.forEach((st: any) => {
+          if (st.brand) brandsSet.add(st.brand);
+        });
+        const defaults = [
+          "Common Grounds",
+          "Encounter Coffee",
+          "The Sum of Us",
+          "Tom and Serg",
+          "Byron Bathers Club",
+          "Splendour Fields",
+          "Hawkerboi",
+          "The Guild Restaurant",
+          "Harvest & Co"
+        ];
+        defaults.forEach(d => brandsSet.add(d));
+        initialOrder = Array.from(brandsSet).sort();
+      }
+      setOrderedBrands(initialOrder);
     } catch (err) {
       console.error("Failed to fetch settings data", err);
     } finally {
@@ -259,6 +285,29 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
       fetchData();
     } catch (err) {
       setMsg("Failed to save automation settings");
+    } finally {
+      setLoading(false);
+      setTimeout(() => setMsg(""), 3000);
+    }
+  };
+
+  const handleMoveBrand = async (index: number, direction: "up" | "down") => {
+    const newOrder = [...orderedBrands];
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= newOrder.length) return;
+    
+    // Swap
+    const temp = newOrder[index];
+    newOrder[index] = newOrder[targetIndex];
+    newOrder[targetIndex] = temp;
+    
+    setOrderedBrands(newOrder);
+    setLoading(true);
+    try {
+      await updateBrandOrder(newOrder);
+      setMsg("Brand sorting order updated successfully!");
+    } catch (e) {
+      setMsg("Failed to update brand sorting order");
     } finally {
       setLoading(false);
       setTimeout(() => setMsg(""), 3000);
@@ -453,6 +502,15 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
         >
           Database Cache
         </button>
+        <button
+          onClick={() => {
+            setTab("BRANDS");
+            resetUserForm();
+          }}
+          className={`px-4 py-2 text-sm font-bold border-b-2 transition-all whitespace-nowrap ${tab === "BRANDS" ? "border-rose-600 text-rose-600 dark:text-rose-400" : "text-slate-400"}`}
+        >
+          Brand Sequence
+        </button>
       </div>
 
       {msg && (
@@ -461,7 +519,49 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
         </div>
       )}
 
-      {tab === "CACHING" ? (
+      {tab === "BRANDS" ? (
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 shadow-sm transition-all space-y-6 animate-fadeIn">
+          <div className="border-b border-slate-100 dark:border-slate-800 pb-6">
+            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">
+              Brand Sequence Configuration
+            </h3>
+            <p className="text-sm text-slate-400 mt-1">
+              Customize the display order of brands inside the Covers Excel report. Use the Up and Down arrows to arrange them.
+            </p>
+          </div>
+          
+          <div className="max-w-2xl bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <ul className="divide-y divide-slate-200 dark:divide-slate-800">
+              {orderedBrands.map((brand, idx) => (
+                <li key={brand} className="flex items-center justify-between p-4 hover:bg-slate-100/50 dark:hover:bg-slate-900/50 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-bold text-slate-400 w-6">#{idx + 1}</span>
+                    <span className="text-sm font-bold text-slate-800 dark:text-slate-200">{brand}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      disabled={idx === 0 || loading}
+                      onClick={() => handleMoveBrand(idx, "up")}
+                      className="p-1.5 bg-white dark:bg-slate-900 hover:bg-rose-50 dark:hover:bg-rose-950/20 text-slate-500 hover:text-rose-600 rounded-lg border border-slate-200 dark:border-slate-800 disabled:opacity-30 cursor-pointer"
+                      title="Move Up"
+                    >
+                      ▲
+                    </button>
+                    <button
+                      disabled={idx === orderedBrands.length - 1 || loading}
+                      onClick={() => handleMoveBrand(idx, "down")}
+                      className="p-1.5 bg-white dark:bg-slate-900 hover:bg-rose-50 dark:hover:bg-rose-950/20 text-slate-500 hover:text-rose-600 rounded-lg border border-slate-200 dark:border-slate-800 disabled:opacity-30 cursor-pointer"
+                      title="Move Down"
+                    >
+                      ▼
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      ) : tab === "CACHING" ? (
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 shadow-sm transition-all space-y-6">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-100 dark:border-slate-800 pb-6 gap-4">
             <div>
