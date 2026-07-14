@@ -15,6 +15,8 @@ import {
   getReportLogs,
   getBrandOrder,
   updateBrandOrder,
+  getCachingSettings,
+  updateCachingSettings,
 } from "../../services/firestoreService";
 
 interface SettingsModuleProps {
@@ -23,6 +25,7 @@ interface SettingsModuleProps {
 
 const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
   const [tab, setTab] = useState<"STORES" | "USERS" | "AUTOMATION" | "MAILER" | "LOGS" | "CACHING" | "BRANDS">("STORES");
+  const [cachingEnabled, setCachingEnabled] = useState(true);
   const [orderedBrands, setOrderedBrands] = useState<string[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -152,16 +155,18 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [s, u, auto, mailer, logs, order] = await Promise.all([
+      const [s, u, auto, mailer, logs, order, cacheSet] = await Promise.all([
         getStores(),
         getUsers(),
         getAutomationSettings(),
         getMailerSettings(),
         getReportLogs(),
         getBrandOrder(),
+        getCachingSettings(),
       ]);
       setStores(s || []);
       setUsers(u || []);
+      setCachingEnabled(cacheSet ? cacheSet.enabled !== false : true);
       const defaultAuto = {
         enabled: true,
         fetchTime: "08:00",
@@ -308,6 +313,22 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
       setMsg("Brand sorting order updated successfully!");
     } catch (e) {
       setMsg("Failed to update brand sorting order");
+    } finally {
+      setLoading(false);
+      setTimeout(() => setMsg(""), 3000);
+    }
+  };
+
+  const handleToggleCaching = async () => {
+    const nextVal = !cachingEnabled;
+    setCachingEnabled(nextVal);
+    setLoading(true);
+    try {
+      await updateCachingSettings(nextVal);
+      setMsg(`Firestore caching layer ${nextVal ? "enabled" : "disabled"} successfully!`);
+    } catch (e) {
+      setMsg("Failed to update caching settings");
+      setCachingEnabled(!nextVal);
     } finally {
       setLoading(false);
       setTimeout(() => setMsg(""), 3000);
@@ -572,13 +593,27 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                 Wipe, backfill, and monitor Firestore caching layers for high-speed offline analytics.
               </p>
             </div>
-            <button
-              onClick={handleResetCache}
-              disabled={statusLoading || backfillStatus.status === "running"}
-              className="px-4 py-2 text-xs font-bold bg-slate-100 dark:bg-slate-800 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-xl transition-all disabled:opacity-50"
-            >
-              Reset & Clear Cache
-            </button>
+            <div className="flex items-center gap-4 ml-auto">
+              <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-950 p-2 px-3.5 rounded-xl border border-slate-200 dark:border-slate-800">
+                <span className="text-xs font-bold text-slate-600 dark:text-slate-400">Use Firestore Cache</span>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={cachingEnabled}
+                    onChange={handleToggleCaching}
+                    className="sr-only peer"
+                  />
+                  <div className="w-9 h-5 bg-slate-200 dark:bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-slate-600 peer-checked:bg-rose-600"></div>
+                </label>
+              </div>
+              <button
+                onClick={handleResetCache}
+                disabled={statusLoading || backfillStatus.status === "running"}
+                className="px-4 py-2 text-xs font-bold bg-slate-100 dark:bg-slate-800 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-xl transition-all disabled:opacity-50"
+              >
+                Reset & Clear Cache
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

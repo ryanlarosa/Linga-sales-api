@@ -306,3 +306,27 @@ export const updateBrandOrder = async (brands: string[]): Promise<void> => {
     throw error;
   }
 };
+
+export const getCachingSettings = async (): Promise<{ enabled: boolean }> => {
+  try {
+    const docRef = doc(db, "configs", "caching_settings");
+    const snapshot = await getDoc(docRef);
+    if (snapshot.exists()) {
+      return { enabled: snapshot.data().enabled !== false };
+    }
+    return { enabled: true };
+  } catch (error) {
+    console.error("Error getting caching settings:", error);
+    return { enabled: true };
+  }
+};
+
+export const updateCachingSettings = async (enabled: boolean): Promise<void> => {
+  try {
+    const docRef = doc(db, "configs", "caching_settings");
+    await setDoc(docRef, { enabled });
+  } catch (error) {
+    console.error("Error updating caching settings:", error);
+    throw error;
+  }
+};

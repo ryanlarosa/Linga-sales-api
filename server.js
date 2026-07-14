@@ -200,6 +200,23 @@ function pruneSummaryData(data) {
 }
 
 async function getCachedOrFetchDaily(storeId, fromDateStr, toDateStr, collectionName, fetchFn, combineFn, pruneFn) {
+    let useCache = true;
+    try {
+        const cacheConfigDoc = await getDoc(doc(db, "configs", "caching_settings"));
+        if (cacheConfigDoc.exists()) {
+            useCache = cacheConfigDoc.data().enabled !== false;
+        }
+    } catch (e) {
+        console.error("Failed to read caching settings:", e.message);
+    }
+
+    if (!useCache) {
+        console.log(`[Cache Bypass] Fetching ${collectionName} for ${storeId} on range ${fromDateStr} to ${toDateStr} directly...`);
+        const apiData = await fetchFn({ isRange: true, from: fromDateStr, to: toDateStr });
+        const prunedData = pruneFn ? pruneFn(apiData) : apiData;
+        return combineFn([prunedData]);
+    }
+
     const dates = getDatesInRange(fromDateStr, toDateStr);
     const results = [];
     
@@ -253,9 +270,11 @@ app.get('/api/v1/lingapos/store/:storeId/getsale', async (req, res) => {
             fromDate,
             toDate,
             'sales_cache',
-            async (date) => {
+            async (dateOrRange) => {
                 const url = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/getsale`;
-                const response = await callExternalApi(url, { fromDate: formatToLingaDate(date), toDate: formatToLingaDate(date) });
+                const from = dateOrRange.isRange ? dateOrRange.from : dateOrRange;
+                const to = dateOrRange.isRange ? dateOrRange.to : dateOrRange;
+                const response = await callExternalApi(url, { fromDate: formatToLingaDate(from), toDate: formatToLingaDate(to) });
                 return response.data;
             },
             (dailyResults) => {
@@ -288,12 +307,14 @@ app.get('/api/v1/lingapos/store/:storeId/discountReport', async (req, res) => {
             fromDate,
             toDate,
             'discounts_cache',
-            async (date) => {
+            async (dateOrRange) => {
                 const url = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/discountReport`;
+                const from = dateOrRange.isRange ? dateOrRange.from : dateOrRange;
+                const to = dateOrRange.isRange ? dateOrRange.to : dateOrRange;
                 const response = await callExternalApi(url, { 
                     dateOption: 'DR', 
-                    fromDate: formatToLingaDate(date), 
-                    toDate: formatToLingaDate(date), 
+                    fromDate: formatToLingaDate(from), 
+                    toDate: formatToLingaDate(to), 
                     selectedReportType: selectedReportType || 'By Discount Type' 
                 });
                 return response.data;
@@ -350,9 +371,11 @@ app.get('/api/v1/lingapos/store/:storeId/saleReport', async (req, res) => {
             fromDate,
             toDate,
             'sale_reports_cache',
-            async (date) => {
+            async (dateOrRange) => {
                 const url = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/saleReport`;
-                const queryParams = { ...req.query, fromDate: formatToLingaDate(date), toDate: formatToLingaDate(date) };
+                const from = dateOrRange.isRange ? dateOrRange.from : dateOrRange;
+                const to = dateOrRange.isRange ? dateOrRange.to : dateOrRange;
+                const queryParams = { ...req.query, fromDate: formatToLingaDate(from), toDate: formatToLingaDate(to) };
                 const response = await callExternalApi(url, queryParams);
                 return response.data;
             },
@@ -386,9 +409,11 @@ app.get('/api/v1/lingapos/store/:storeId/saleSummaryReport', async (req, res) =>
             fromDate,
             toDate,
             'sale_summaries_cache',
-            async (date) => {
+            async (dateOrRange) => {
                 const url = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/saleSummaryReport`;
-                const queryParams = { ...req.query, fromDate: formatToLingaDate(date), toDate: formatToLingaDate(date) };
+                const from = dateOrRange.isRange ? dateOrRange.from : dateOrRange;
+                const to = dateOrRange.isRange ? dateOrRange.to : dateOrRange;
+                const queryParams = { ...req.query, fromDate: formatToLingaDate(from), toDate: formatToLingaDate(to) };
                 const response = await callExternalApi(url, queryParams);
                 return response.data;
             },
