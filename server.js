@@ -200,7 +200,7 @@ function pruneSummaryData(data) {
 }
 
 async function getCachedOrFetchDaily(storeId, fromDateStr, toDateStr, collectionName, fetchFn, combineFn, pruneFn) {
-    let useCache = true;
+    let useCache = false; // Hardcoded to false to bypass Firestore quota limits
     try {
         const cacheConfigDoc = await getDoc(doc(db, "configs", "caching_settings"));
         if (cacheConfigDoc.exists()) {
