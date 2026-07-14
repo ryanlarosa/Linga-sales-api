@@ -80,6 +80,10 @@ function formatToLingaDate(dateStr) {
     if (!dateStr.includes('-')) return dateStr;
     const parts = dateStr.split('-');
     if (parts.length !== 3) return dateStr;
+    // If it's already in DD-MMM-YYYY format (e.g. 01-JUL-2025)
+    if (isNaN(parseInt(parts[1], 10))) {
+        return dateStr;
+    }
     const year = parts[0];
     const monthIndex = parseInt(parts[1], 10) - 1;
     const day = parts[2];
