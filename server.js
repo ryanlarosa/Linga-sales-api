@@ -706,6 +706,16 @@ async function getAutomationSettingsBackend() {
 async function fetchStoreTrendSummaryBackend(storeId, dates) {
   const results = {};
 
+  let useCache = false; // Bypass cache by default
+  try {
+    const cacheConfigDoc = await getDoc(doc(db, "configs", "caching_settings"));
+    if (cacheConfigDoc.exists()) {
+      useCache = cacheConfigDoc.data().enabled !== false;
+    }
+  } catch (e) {
+    console.error("Failed to read caching settings in fetchStoreTrendSummaryBackend:", e.message);
+  }
+
   const formatDateString = (d) => {
     const day = String(d.getUTCDate()).padStart(2, '0');
     const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
@@ -739,48 +749,70 @@ async function fetchStoreTrendSummaryBackend(storeId, dates) {
       const dateStrIso = `${yyyy}-${mm}-${dd}`;
 
       try {
-        const salesDocRef = doc(db, 'sales_cache', `${storeId}_${dateStrIso}`);
-        const summaryDocRef = doc(db, 'sale_summaries_cache', `${storeId}_${dateStrIso}`);
-
         let salesData;
         let summaryData;
 
-        // Try load from cache first
-        const [snapSales, snapSummary] = await Promise.all([
-          getDoc(salesDocRef),
-          getDoc(summaryDocRef)
-        ]);
+        if (useCache) {
+          const salesDocRef = doc(db, 'sales_cache', `${storeId}_${dateStrIso}`);
+          const summaryDocRef = doc(db, 'sale_summaries_cache', `${storeId}_${dateStrIso}`);
 
-        if (snapSales.exists()) {
-          console.log(`[Backend Cache Hit] getsale for ${storeId} on ${dateStrIso}`);
-          salesData = snapSales.data().data;
+          // Try load from cache first
+          const [snapSales, snapSummary] = await Promise.all([
+            getDoc(salesDocRef),
+            getDoc(summaryDocRef)
+          ]);
+
+          if (snapSales.exists()) {
+            console.log(`[Backend Cache Hit] getsale for ${storeId} on ${dateStrIso}`);
+            salesData = snapSales.data().data;
+          } else {
+            console.log(`[Backend Cache Miss] Fetching getsale for ${storeId} on ${dateStrIso}...`);
+            const salesUrl = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/getsale`;
+            const salesRes = await callExternalApi(salesUrl, { fromDate: formatted, toDate: formatted });
+            salesData = salesRes.data;
+            try {
+              await setDoc(salesDocRef, {
+                storeId,
+                date: dateStrIso,
+                data: salesData,
+                createdAt: new Date().toISOString()
+              });
+            } catch (writeErr) {
+              console.error(`[Backend Cache Write Error] Failed to write sales cache for ${storeId} on ${dateStrIso}:`, writeErr.message);
+            }
+          }
+
+          if (snapSummary.exists()) {
+            console.log(`[Backend Cache Hit] saleSummaryReport for ${storeId} on ${dateStrIso}`);
+            summaryData = snapSummary.data().data;
+          } else {
+            console.log(`[Backend Cache Miss] Fetching saleSummaryReport for ${storeId} on ${dateStrIso}...`);
+            const summaryUrl = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/saleSummaryReport`;
+            const summaryRes = await callExternalApi(summaryUrl, { dateOption: 'DR', fromDate: formatted, toDate: formatted });
+            summaryData = summaryRes.data;
+            try {
+              await setDoc(summaryDocRef, {
+                storeId,
+                date: dateStrIso,
+                data: summaryData,
+                createdAt: new Date().toISOString()
+              });
+            } catch (writeErr) {
+              console.error(`[Backend Cache Write Error] Failed to write summary cache for ${storeId} on ${dateStrIso}:`, writeErr.message);
+            }
+          }
         } else {
-          console.log(`[Backend Cache Miss] Fetching getsale for ${storeId} on ${dateStrIso}...`);
+          // Cache bypassed - query LINGAPOS directly
+          console.log(`[Backend Cache Bypass] Fetching getsale & summary for ${storeId} on ${dateStrIso}...`);
           const salesUrl = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/getsale`;
-          const salesRes = await callExternalApi(salesUrl, { fromDate: formatted, toDate: formatted });
-          salesData = salesRes.data;
-          await setDoc(salesDocRef, {
-            storeId,
-            date: dateStrIso,
-            data: salesData,
-            createdAt: new Date().toISOString()
-          });
-        }
-
-        if (snapSummary.exists()) {
-          console.log(`[Backend Cache Hit] saleSummaryReport for ${storeId} on ${dateStrIso}`);
-          summaryData = snapSummary.data().data;
-        } else {
-          console.log(`[Backend Cache Miss] Fetching saleSummaryReport for ${storeId} on ${dateStrIso}...`);
           const summaryUrl = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/saleSummaryReport`;
-          const summaryRes = await callExternalApi(summaryUrl, { dateOption: 'DR', fromDate: formatted, toDate: formatted });
+
+          const [salesRes, summaryRes] = await Promise.all([
+            callExternalApi(salesUrl, { fromDate: formatted, toDate: formatted }),
+            callExternalApi(summaryUrl, { dateOption: 'DR', fromDate: formatted, toDate: formatted })
+          ]);
+          salesData = salesRes.data;
           summaryData = summaryRes.data;
-          await setDoc(summaryDocRef, {
-            storeId,
-            date: dateStrIso,
-            data: summaryData,
-            createdAt: new Date().toISOString()
-          });
         }
 
         let dailyCovers = 0;
