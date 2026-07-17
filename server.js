@@ -1741,7 +1741,245 @@ async function uploadToGoogleDrive(fileBuffer, fileName, mailerSettings = null, 
   }
 }
 
-async function sendEmailReport(fileBuffer, fileName, selectedDate, mailerSettings = null, reportType = "Covers") {
+async function buildHtmlReport(trendData, totals, selectedDate, anchorDates, reportType) {
+  if (!trendData || !totals || !anchorDates) return "";
+
+  const formatDate = (d) => {
+    const dateObj = new Date(d);
+    return `${String(dateObj.getUTCDate()).padStart(2, '0')}-${String(dateObj.getUTCMonth() + 1).padStart(2, '0')}-${String(dateObj.getUTCFullYear()).slice(-2)}`;
+  };
+
+  const dayOfWeek = new Date(anchorDates[0]).toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' });
+  const isSales = reportType.toLowerCase() === "sales";
+  
+  const fmtActual = (val) => {
+    if (val === 0) return "-";
+    if (isSales) {
+      return "AED " + val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    return val.toLocaleString();
+  };
+
+  const fmtVar = (val) => {
+    if (val === "na" || val === undefined) return "na";
+    if (val === 0) return "-";
+    const absVal = Math.abs(val);
+    if (isSales) {
+      return "AED " + absVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    return absVal.toLocaleString();
+  };
+
+  // Group & sequence/sort data by brand
+  const getStoreBrand = (storeName, configuredBrand) => {
+    if (configuredBrand) return configuredBrand;
+    const name = storeName.toLowerCase();
+    if (name.includes("common grounds")) return "Common Grounds";
+    if (name.includes("ldc")) return "LDC Kitchen+Coffee";
+    if (name.includes("the sum of us")) return "The Sum of Us";
+    if (name.includes("encounter coffee")) return "Encounter Coffee";
+    return "Other";
+  };
+
+  // Pre-calculate parsed store-level rows with their variance states
+  const parsedRows = trendData.map((row) => {
+    const thisWk = row.thisWk || 0;
+    const lastWk = row.lastWk || 0;
+    const lastMth = row.lastMth || 0;
+    const lastYr = row.lastYr || 0;
+    
+    return {
+      ...row,
+      thisWk,
+      lastWk,
+      lastMth,
+      lastYr,
+      brand: getStoreBrand(row.storeName, row.brand),
+      varLw: (thisWk === 0 || lastWk === 0) ? "na" : (thisWk - lastWk),
+      varLm: (thisWk === 0 || lastMth === 0) ? "na" : (thisWk - lastMth),
+      varLy: (thisWk === 0 || lastYr === 0) ? "na" : (thisWk - lastYr),
+    };
+  });
+
+  // Calculate Company Level totals (actuals are straight sums)
+  const totalThisWk = parsedRows.reduce((sum, r) => sum + r.thisWk, 0);
+  const totalLastWk = parsedRows.reduce((sum, r) => sum + r.lastWk, 0);
+  const totalLastMth = parsedRows.reduce((sum, r) => sum + r.lastMth, 0);
+  const totalLastYr = parsedRows.reduce((sum, r) => sum + r.lastYr, 0);
+
+  // Calculate Company Level variances (summing store variances that are not "na")
+  const lwVars = parsedRows.filter(r => r.varLw !== "na").map(r => r.varLw);
+  const lmVars = parsedRows.filter(r => r.varLm !== "na").map(r => r.varLm);
+  const lyVars = parsedRows.filter(r => r.varLy !== "na").map(r => r.varLy);
+
+  const totalVarLw = lwVars.length > 0 ? lwVars.reduce((sum, v) => sum + v, 0) : "na";
+  const totalVarLm = lmVars.length > 0 ? lmVars.reduce((sum, v) => sum + v, 0) : "na";
+  const totalVarLy = lyVars.length > 0 ? lyVars.reduce((sum, v) => sum + v, 0) : "na";
+
+  // Group the parsedRows by brand
+  const groupedByBrand = {};
+  parsedRows.forEach((row) => {
+    if (!groupedByBrand[row.brand]) {
+      groupedByBrand[row.brand] = [];
+    }
+    groupedByBrand[row.brand].push(row);
+  });
+
+  let brandOrder = [];
+  try {
+    const orderDoc = await getDoc(doc(db, "configs", "brand_order"));
+    if (orderDoc.exists()) {
+      brandOrder = orderDoc.data().brands || [];
+    }
+  } catch (e) {
+    console.error("Failed to fetch brand order for HTML mail:", e.message);
+  }
+
+  const sortedBrands = Object.keys(groupedByBrand).sort((a, b) => {
+    if (a === "Other") return 1;
+    if (b === "Other") return -1;
+    const idxA = brandOrder.indexOf(a);
+    const idxB = brandOrder.indexOf(b);
+    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+    if (idxA !== -1) return -1;
+    if (idxB !== -1) return 1;
+    return a.localeCompare(b);
+  });
+  sortedBrands.forEach((brand) => {
+    groupedByBrand[brand].sort((a, b) => a.storeName.localeCompare(b.storeName));
+  });
+
+  function getStyledVarTd(val) {
+    if (typeof val === 'number') {
+      if (val > 0) {
+        return `<td style="padding: 4px 8px; border: 1px solid #CBD5E1; text-align: right; background-color: #D1FAE5; color: #065F46; font-weight: bold;">+${fmtVar(val)}</td>`;
+      } else if (val < 0) {
+        return `<td style="padding: 4px 8px; border: 1px solid #CBD5E1; text-align: right; background-color: #FFFEE2E2; color: #991B1B; font-weight: bold;">(${fmtVar(val)})</td>`;
+      } else {
+        return `<td style="padding: 4px 8px; border: 1px solid #CBD5E1; text-align: right; font-weight: bold; color: #334155;">-</td>`;
+      }
+    }
+    return `<td style="padding: 4px 8px; border: 1px solid #CBD5E1; text-align: center; color: #64748B;">na</td>`;
+  }
+
+  // Start HTML construction
+  let html = `
+  <div style="font-family: Arial, sans-serif; font-size: 14px; color: #334155; max-width: 800px; line-height: 1.5;">
+    <p>Good morning,</p>
+    <p>PFB ${reportType} report for ${selectedDate} (${dayOfWeek}).</p>
+    
+    <table style="border-collapse: collapse; width: 100%; max-width: 800px; font-family: Arial, sans-serif; font-size: 12px; margin-top: 15px; margin-bottom: 20px;">
+      <thead>
+        <!-- Row 1: Primary headers -->
+        <tr>
+          <th style="background-color: #1B365D; color: #FFFFFF; font-weight: bold; padding: 6px 8px; border: 1px solid #CBD5E1; text-align: left; font-size: 13px;">Daily ${reportType} tracker</th>
+          <th colspan="4" style="background-color: #1B365D; color: #FFFFFF; font-weight: bold; padding: 6px 8px; border: 1px solid #CBD5E1; text-align: center; font-size: 13px;">Actuals - ${dayOfWeek}</th>
+          <th colspan="3" style="background-color: #1B365D; color: #FFFFFF; font-weight: bold; padding: 6px 8px; border: 1px solid #CBD5E1; text-align: center; font-size: 13px;">Variance This Wk vs:</th>
+        </tr>
+        <!-- Row 2: Date and sub-headers -->
+        <tr>
+          <th style="background-color: #FFFFFF; color: #1B365D; font-weight: bold; padding: 6px 8px; border: 1px solid #CBD5E1; text-align: left;">Venue</th>
+          <th style="background-color: #FFFFFF; color: #1B365D; font-weight: bold; padding: 6px 8px; border: 1px solid #CBD5E1; text-align: center;">This Wk<br><span style="font-size: 10px; font-weight: normal; color: #64748B;">${formatDate(anchorDates[0])}</span></th>
+          <th style="background-color: #FFFFFF; color: #1B365D; font-weight: bold; padding: 6px 8px; border: 1px solid #CBD5E1; text-align: center;">Last Wk<br><span style="font-size: 10px; font-weight: normal; color: #64748B;">${formatDate(anchorDates[1])}</span></th>
+          <th style="background-color: #FFFFFF; color: #1B365D; font-weight: bold; padding: 6px 8px; border: 1px solid #CBD5E1; text-align: center;">Last Mth<br><span style="font-size: 10px; font-weight: normal; color: #64748B;">${formatDate(anchorDates[2])}</span></th>
+          <th style="background-color: #FFFFFF; color: #1B365D; font-weight: bold; padding: 6px 8px; border: 1px solid #CBD5E1; text-align: center;">Last Yr<br><span style="font-size: 10px; font-weight: normal; color: #64748B;">${formatDate(anchorDates[3])}</span></th>
+          <th style="background-color: #FFFFFF; color: #1B365D; font-weight: bold; padding: 6px 8px; border: 1px solid #CBD5E1; text-align: center;">Last Wk</th>
+          <th style="background-color: #FFFFFF; color: #1B365D; font-weight: bold; padding: 6px 8px; border: 1px solid #CBD5E1; text-align: center;">Last Mth</th>
+          <th style="background-color: #FFFFFF; color: #1B365D; font-weight: bold; padding: 6px 8px; border: 1px solid #CBD5E1; text-align: center;">Last Yr</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Company Total Row -->
+        <tr style="background-color: #DCE6F1; font-weight: bold; color: #0F172A;">
+          <td style="padding: 6px 8px; border: 1px solid #CBD5E1; text-align: left;">Total (Company level)</td>
+          <td style="padding: 6px 8px; border: 1px solid #CBD5E1; text-align: right;">${fmtActual(totalThisWk)}</td>
+          <td style="padding: 6px 8px; border: 1px solid #CBD5E1; text-align: right;">${fmtActual(totalLastWk)}</td>
+          <td style="padding: 6px 8px; border: 1px solid #CBD5E1; text-align: right;">${fmtActual(totalLastMth)}</td>
+          <td style="padding: 6px 8px; border: 1px solid #CBD5E1; text-align: right;">${fmtActual(totalLastYr)}</td>
+          ${getStyledVarTd(totalVarLw)}
+          ${getStyledVarTd(totalVarLm)}
+          ${getStyledVarTd(totalVarLy)}
+        </tr>
+      `;
+
+  sortedBrands.forEach((brand) => {
+    const brandStores = groupedByBrand[brand];
+    
+    const brandThisWk = brandStores.reduce((sum, r) => sum + r.thisWk, 0);
+    const brandLastWk = brandStores.reduce((sum, r) => sum + r.lastWk, 0);
+    const brandLastMth = brandStores.reduce((sum, r) => sum + r.lastMth, 0);
+    const brandLastYr = brandStores.reduce((sum, r) => sum + r.lastYr, 0);
+
+    const bLwVars = brandStores.filter(r => r.varLw !== "na").map(r => r.varLw);
+    const bLmVars = brandStores.filter(r => r.varLm !== "na").map(r => r.varLm);
+    const bLyVars = brandStores.filter(r => r.varLy !== "na").map(r => r.varLy);
+
+    const brandVarLw = bLwVars.length > 0 ? bLwVars.reduce((sum, v) => sum + v, 0) : "na";
+    const brandVarLm = bLmVars.length > 0 ? bLmVars.reduce((sum, v) => sum + v, 0) : "na";
+    const brandVarLy = bLyVars.length > 0 ? bLyVars.reduce((sum, v) => sum + v, 0) : "na";
+
+    const hasMultiple = brandStores.length > 1;
+
+    if (hasMultiple) {
+      // Write Brand Header Row
+      html += `
+        <tr style="font-weight: bold; color: #0F172A; background-color: #F8FAFC;">
+          <td style="padding: 5px 8px; border: 1px solid #CBD5E1; text-align: left;">${brand}</td>
+          <td style="padding: 5px 8px; border: 1px solid #CBD5E1; text-align: right;">${fmtActual(brandThisWk)}</td>
+          <td style="padding: 5px 8px; border: 1px solid #CBD5E1; text-align: right;">${fmtActual(brandLastWk)}</td>
+          <td style="padding: 5px 8px; border: 1px solid #CBD5E1; text-align: right;">${fmtActual(brandLastMth)}</td>
+          <td style="padding: 5px 8px; border: 1px solid #CBD5E1; text-align: right;">${fmtActual(brandLastYr)}</td>
+          ${getStyledVarTd(brandVarLw)}
+          ${getStyledVarTd(brandVarLm)}
+          ${getStyledVarTd(brandVarLy)}
+        </tr>
+      `;
+
+      // Write stores
+      brandStores.forEach((store) => {
+        html += `
+          <tr style="color: #475569;">
+            <td style="padding: 4px 8px 4px 20px; border: 1px solid #E2E8F0; text-align: left;">${store.storeName}</td>
+            <td style="padding: 4px 8px; border: 1px solid #E2E8F0; text-align: right;">${fmtActual(store.thisWk)}</td>
+            <td style="padding: 4px 8px; border: 1px solid #E2E8F0; text-align: right;">${fmtActual(store.lastWk)}</td>
+            <td style="padding: 4px 8px; border: 1px solid #E2E8F0; text-align: right;">${fmtActual(store.lastMth)}</td>
+            <td style="padding: 4px 8px; border: 1px solid #E2E8F0; text-align: right;">${fmtActual(store.lastYr)}</td>
+            ${getStyledVarTd(store.varLw)}
+            ${getStyledVarTd(store.varLm)}
+            ${getStyledVarTd(store.varLy)}
+          </tr>
+        `;
+      });
+    } else {
+      // Single store brand
+      const store = brandStores[0];
+      html += `
+        <tr style="font-weight: bold; color: #0F172A;">
+          <td style="padding: 5px 8px; border: 1px solid #CBD5E1; text-align: left;">${store.storeName}</td>
+          <td style="padding: 5px 8px; border: 1px solid #CBD5E1; text-align: right;">${fmtActual(store.thisWk)}</td>
+          <td style="padding: 5px 8px; border: 1px solid #CBD5E1; text-align: right;">${fmtActual(store.lastWk)}</td>
+          <td style="padding: 5px 8px; border: 1px solid #CBD5E1; text-align: right;">${fmtActual(store.lastMth)}</td>
+          <td style="padding: 5px 8px; border: 1px solid #CBD5E1; text-align: right;">${fmtActual(store.lastYr)}</td>
+          ${getStyledVarTd(store.varLw)}
+          ${getStyledVarTd(store.varLm)}
+          ${getStyledVarTd(store.varLy)}
+        </tr>
+      `;
+    }
+  });
+
+  html += `
+      </tbody>
+    </table>
+    
+    <p>Thanks and Regards,</p>
+  </div>
+  `;
+
+  return html;
+}
+
+async function sendEmailReport(fileBuffer, fileName, selectedDate, mailerSettings = null, reportType = "Covers", trendData = null, totals = null, anchorDates = null) {
   const host = mailerSettings?.smtpHost || process.env.SMTP_HOST;
   const port = parseInt(mailerSettings?.smtpPort || process.env.SMTP_PORT || '587');
   const user = mailerSettings?.smtpUser || process.env.SMTP_USER;
@@ -1777,6 +2015,15 @@ async function sendEmailReport(fileBuffer, fileName, selectedDate, mailerSetting
     .replace(/{type}/gi, typePlaceholder)
     .replace(/{date}/gi, datePlaceholder);
 
+  let htmlContent = null;
+  if (trendData && totals && anchorDates) {
+    try {
+      htmlContent = await buildHtmlReport(trendData, totals, selectedDate, anchorDates, reportType);
+    } catch (err) {
+      console.error("Failed to build HTML body for email:", err.message);
+    }
+  }
+
   const mailOptions = {
     from: `"Linga Reports" <${user}>`,
     to: recipients,
@@ -1789,6 +2036,10 @@ async function sendEmailReport(fileBuffer, fileName, selectedDate, mailerSetting
       }
     ]
   };
+
+  if (htmlContent) {
+    mailOptions.html = htmlContent;
+  }
 
   const info = await transporter.sendMail(mailOptions);
   console.log("Email sent successfully:", info.messageId);
@@ -1856,7 +2107,7 @@ app.post('/api/v1/reports/email-cover-tracker', async (req, res) => {
         let emailResult = false;
         let emailError = null;
         try {
-            emailResult = await sendEmailReport(excelBuffer, fileName, selectedDate, mailerSettings, "Covers");
+            emailResult = await sendEmailReport(excelBuffer, fileName, selectedDate, mailerSettings, "Covers", trendData, totals, anchorDates);
         } catch (err) {
             console.error("[Backend] Email Send Failed:", err.message);
             emailError = err.message;
@@ -1954,7 +2205,7 @@ app.post('/api/v1/reports/email-sales-tracker', async (req, res) => {
         let emailResult = false;
         let emailError = null;
         try {
-            emailResult = await sendEmailReport(excelBuffer, fileName, selectedDate, mailerSettings, "Sales");
+            emailResult = await sendEmailReport(excelBuffer, fileName, selectedDate, mailerSettings, "Sales", trendData, totals, anchorDates);
         } catch (err) {
             console.error("[Backend] Sales Email Send Failed:", err.message);
             emailError = err.message;
@@ -2205,7 +2456,7 @@ app.get('/api/v1/cron/daily-cover-tracker', async (req, res) => {
                 let emailResult = false;
                 let emailError = null;
                 try {
-                    emailResult = await sendEmailReport(excelBuffer, fileName, selectedDate, mailerSettings, "Covers");
+                    emailResult = await sendEmailReport(excelBuffer, fileName, selectedDate, mailerSettings, "Covers", trendData, totals, anchorDates);
                 } catch (err) {
                     console.error("[Cron-Covers] Email Send Failed:", err.message);
                     emailError = err.message;
@@ -2285,7 +2536,7 @@ app.get('/api/v1/cron/daily-cover-tracker', async (req, res) => {
                 let emailResult = false;
                 let emailError = null;
                 try {
-                    emailResult = await sendEmailReport(excelBuffer, fileName, selectedDate, mailerSettings, "Sales");
+                    emailResult = await sendEmailReport(excelBuffer, fileName, selectedDate, mailerSettings, "Sales", trendData, totals, anchorDates);
                 } catch (err) {
                     console.error("[Cron-Sales] Email Send Failed:", err.message);
                     emailError = err.message;
