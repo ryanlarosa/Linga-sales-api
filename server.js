@@ -848,14 +848,14 @@ async function generateExcelBuffer(trendData, totals, selectedDate, anchorDates)
   worksheet.views = [{ showGridLines: true }];
 
   worksheet.columns = [
-    { key: 'venue', width: 32 },
-    { key: 'thisWk', width: 16 },
-    { key: 'lastWk', width: 16 },
-    { key: 'lastMth', width: 16 },
-    { key: 'lastYr', width: 16 },
-    { key: 'varLw', width: 16 },
-    { key: 'varLm', width: 16 },
-    { key: 'varLy', width: 16 },
+    { key: 'venue', width: 25 },
+    { key: 'thisWk', width: 11 },
+    { key: 'lastWk', width: 11 },
+    { key: 'lastMth', width: 11 },
+    { key: 'lastYr', width: 11 },
+    { key: 'varLw', width: 11 },
+    { key: 'varLm', width: 11 },
+    { key: 'varLy', width: 11 },
   ];
 
   const formatDate = (d) => {
@@ -868,7 +868,7 @@ async function generateExcelBuffer(trendData, totals, selectedDate, anchorDates)
   // Row 1: Report Date
   const dateStrRow = worksheet.addRow([`Report Date: ${selectedDate}`]);
   dateStrRow.getCell(1).font = { name: 'Arial', size: 10, italic: true, color: { argb: 'FF475569' } };
-  dateStrRow.height = 20;
+  dateStrRow.height = 16;
 
   // Row 2: Primary headers
   const row2 = worksheet.addRow([
@@ -881,13 +881,7 @@ async function generateExcelBuffer(trendData, totals, selectedDate, anchorDates)
   worksheet.mergeCells('B2:E2');
   worksheet.mergeCells('F2:H2');
 
-  // Row 3: Blank
-  worksheet.addRow([]);
-
-  // Row 4: Blank
-  worksheet.addRow([]);
-
-  // Row 5: Venue sub-headers
+  // Row 3: Venue sub-headers
   const row5 = worksheet.addRow([
     'Venue',
     'This Wk',
@@ -899,7 +893,7 @@ async function generateExcelBuffer(trendData, totals, selectedDate, anchorDates)
     'Last Yr'
   ]);
 
-  // Row 6: Date rows
+  // Row 4: Date rows
   const row6 = worksheet.addRow([
     '', // Venue column merged
     formatDate(anchorDates[0]),
@@ -911,13 +905,13 @@ async function generateExcelBuffer(trendData, totals, selectedDate, anchorDates)
     ''  // Merged Last Yr
   ]);
 
-  worksheet.mergeCells('A5:A6');
-  worksheet.mergeCells('F5:F6');
-  worksheet.mergeCells('G5:G6');
-  worksheet.mergeCells('H5:H6');
+  worksheet.mergeCells('A3:A4');
+  worksheet.mergeCells('F3:F4');
+  worksheet.mergeCells('G3:G4');
+  worksheet.mergeCells('H3:H4');
 
   // Styling Row 2
-  row2.height = 24;
+  row2.height = 20;
   for (let col = 1; col <= 8; col++) {
     const cell = row2.getCell(col);
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1B365D' } }; // Corporate Navy
@@ -928,7 +922,7 @@ async function generateExcelBuffer(trendData, totals, selectedDate, anchorDates)
     };
   }
 
-  // Styling Rows 5 & 6
+  // Styling Rows 3 & 4
   const borderStyle = {
     top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
     bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
@@ -936,8 +930,8 @@ async function generateExcelBuffer(trendData, totals, selectedDate, anchorDates)
     right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
   };
 
-  row5.height = 20;
-  row6.height = 20;
+  row5.height = 18;
+  row6.height = 18;
   [row5, row6].forEach((r) => {
     for (let col = 1; col <= 8; col++) {
       const cell = r.getCell(col);
@@ -953,7 +947,6 @@ async function generateExcelBuffer(trendData, totals, selectedDate, anchorDates)
   // Helper formatting functions
   const fmtActual = (val) => val === 0 ? "-" : val;
   const fmtVar = (thisWk, otherVal) => {
-    if (thisWk === 0 || otherVal === 0) return "na";
     const diff = thisWk - otherVal;
     return diff === 0 ? "-" : diff;
   };
@@ -969,7 +962,7 @@ async function generateExcelBuffer(trendData, totals, selectedDate, anchorDates)
     fmtVar(totals.thisWk, totals.lastMth),
     fmtVar(totals.thisWk, totals.lastYr)
   ]);
-  totalRow.height = 20;
+  totalRow.height = 18;
 
   // Styles for totals row cells
   for (let col = 1; col <= 8; col++) {
@@ -1082,7 +1075,6 @@ async function generateExcelBuffer(trendData, totals, selectedDate, anchorDates)
     const fmtActual = (val) => val === 0 ? "-" : val;
     // Helper for formatting variance values: 0 -> "-"
     const fmtVar = (thisWk, otherVal) => {
-      if (thisWk === 0 || otherVal === 0) return "na";
       const diff = thisWk - otherVal;
       return diff === 0 ? "-" : diff;
     };
@@ -1099,7 +1091,7 @@ async function generateExcelBuffer(trendData, totals, selectedDate, anchorDates)
         fmtVar(brandThisWk, brandLastMth),
         fmtVar(brandThisWk, brandLastYr)
       ]);
-      brandTotalRow.height = 20;
+      brandTotalRow.height = 18;
 
       for (let col = 1; col <= 8; col++) {
         const cell = brandTotalRow.getCell(col);
@@ -1151,7 +1143,7 @@ async function generateExcelBuffer(trendData, totals, selectedDate, anchorDates)
           fmtVar(row.thisWk, row.lastMth),
           fmtVar(row.thisWk, row.lastYr)
         ]);
-        storeRow.height = 20;
+        storeRow.height = 16;
 
         for (let col = 1; col <= 8; col++) {
           const cell = storeRow.getCell(col);
@@ -1204,7 +1196,7 @@ async function generateExcelBuffer(trendData, totals, selectedDate, anchorDates)
         fmtVar(store.thisWk, store.lastMth),
         fmtVar(store.thisWk, store.lastYr)
       ]);
-      singleRow.height = 20;
+      singleRow.height = 16;
 
       for (let col = 1; col <= 8; col++) {
         const cell = singleRow.getCell(col);
@@ -1271,14 +1263,14 @@ async function generateSalesExcelBuffer(trendData, totals, selectedDate, anchorD
   worksheet.views = [{ showGridLines: true }];
 
   worksheet.columns = [
-    { key: 'venue', width: 32 },
-    { key: 'thisWk', width: 18 },
-    { key: 'lastWk', width: 18 },
-    { key: 'lastMth', width: 18 },
-    { key: 'lastYr', width: 18 },
-    { key: 'varLw', width: 18 },
-    { key: 'varLm', width: 18 },
-    { key: 'varLy', width: 18 },
+    { key: 'venue', width: 25 },
+    { key: 'thisWk', width: 13 },
+    { key: 'lastWk', width: 13 },
+    { key: 'lastMth', width: 13 },
+    { key: 'lastYr', width: 13 },
+    { key: 'varLw', width: 13 },
+    { key: 'varLm', width: 13 },
+    { key: 'varLy', width: 13 },
   ];
 
   const formatDate = (d) => {
@@ -1291,7 +1283,7 @@ async function generateSalesExcelBuffer(trendData, totals, selectedDate, anchorD
   // Row 1: Report Date
   const dateStrRow = worksheet.addRow([`Report Date: ${selectedDate}`]);
   dateStrRow.getCell(1).font = { name: 'Arial', size: 10, italic: true, color: { argb: 'FF475569' } };
-  dateStrRow.height = 20;
+  dateStrRow.height = 16;
 
   // Row 2: Primary headers
   const row2 = worksheet.addRow([
@@ -1305,12 +1297,7 @@ async function generateSalesExcelBuffer(trendData, totals, selectedDate, anchorD
   worksheet.mergeCells('F2:H2');
 
   // Row 3: Blank
-  worksheet.addRow([]);
-
-  // Row 4: Blank
-  worksheet.addRow([]);
-
-  // Row 5: Venue sub-headers
+  // Row 3: Venue sub-headers
   const row5 = worksheet.addRow([
     'Venue',
     'This Wk',
@@ -1322,7 +1309,7 @@ async function generateSalesExcelBuffer(trendData, totals, selectedDate, anchorD
     'Last Yr'
   ]);
 
-  // Row 6: Date rows
+  // Row 4: Date rows
   const row6 = worksheet.addRow([
     '', // Venue column merged
     formatDate(anchorDates[0]),
@@ -1334,13 +1321,13 @@ async function generateSalesExcelBuffer(trendData, totals, selectedDate, anchorD
     ''  // Merged Last Yr
   ]);
 
-  worksheet.mergeCells('A5:A6');
-  worksheet.mergeCells('F5:F6');
-  worksheet.mergeCells('G5:G6');
-  worksheet.mergeCells('H5:H6');
+  worksheet.mergeCells('A3:A4');
+  worksheet.mergeCells('F3:F4');
+  worksheet.mergeCells('G3:G4');
+  worksheet.mergeCells('H3:H4');
 
   // Styling Row 2
-  row2.height = 24;
+  row2.height = 20;
   for (let col = 1; col <= 8; col++) {
     const cell = row2.getCell(col);
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1B365D' } }; // Corporate Navy
@@ -1351,7 +1338,7 @@ async function generateSalesExcelBuffer(trendData, totals, selectedDate, anchorD
     };
   }
 
-  // Styling Rows 5 & 6
+  // Styling Rows 3 & 4
   const borderStyle = {
     top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
     bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
@@ -1359,8 +1346,8 @@ async function generateSalesExcelBuffer(trendData, totals, selectedDate, anchorD
     right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
   };
 
-  row5.height = 20;
-  row6.height = 20;
+  row5.height = 18;
+  row6.height = 18;
   [row5, row6].forEach((r) => {
     for (let col = 1; col <= 8; col++) {
       const cell = r.getCell(col);
@@ -1376,7 +1363,6 @@ async function generateSalesExcelBuffer(trendData, totals, selectedDate, anchorD
   // Helper formatting functions
   const fmtActual = (val) => val === 0 ? "-" : val;
   const fmtVar = (thisWk, otherVal) => {
-    if (thisWk === 0 || otherVal === 0) return "na";
     const diff = thisWk - otherVal;
     return diff === 0 ? "-" : diff;
   };
@@ -1441,7 +1427,6 @@ async function generateSalesExcelBuffer(trendData, totals, selectedDate, anchorD
 
   const formatSalesVal = (val) => val === 0 ? "na" : val;
   const formatSalesVar = (thisWk, otherVal) => {
-    if (thisWk === 0 || otherVal === 0) return "na";
     return thisWk - otherVal;
   };
 
@@ -1457,7 +1442,7 @@ async function generateSalesExcelBuffer(trendData, totals, selectedDate, anchorD
       formatSalesVar(row.thisWk, row.lastYr)
     ];
     const dataRow = worksheet.addRow(rowData);
-    dataRow.height = 20;
+    dataRow.height = 16;
 
     for (let col = 1; col <= 8; col++) {
       const cell = dataRow.getCell(col);
