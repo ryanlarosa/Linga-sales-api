@@ -430,6 +430,30 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
     setTab("USERS");
   };
 
+  const [testingAutomation, setTestingAutomation] = useState(false);
+
+  const handleTestAutomation = async () => {
+    setTestingAutomation(true);
+    setMsg("");
+    try {
+      const response = await fetch("/api/v1/cron/test-automation", {
+        method: "POST"
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setMsg("Success: Test automation completed! Emailed to configured recipients.");
+      } else {
+        setMsg(`Failed: ${data.error || "Unknown error occurred"}`);
+      }
+    } catch (err: any) {
+      setMsg(`Error: ${err.message || "Failed to trigger test"}`);
+    } finally {
+      setTestingAutomation(false);
+      setTimeout(() => setMsg(""), 5000);
+      fetchData(); // Refresh logs tab
+    }
+  };
+
   const toggleStoreAccess = (storeId: string) => {
     const current = userForm.allowedStores || [];
     if (current.includes(storeId)) {
@@ -1099,13 +1123,23 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                   )}
                 </div>
 
-                <button
-                  disabled={loading}
-                  type="submit"
-                  className="w-full py-3.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-rose-600/20 transition-all cursor-pointer"
-                >
-                  {loading ? "Processing..." : "Save Automation Settings"}
-                </button>
+                <div className="flex gap-4">
+                  <button
+                    disabled={loading}
+                    type="submit"
+                    className="flex-1 py-3.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-rose-600/20 transition-all cursor-pointer"
+                  >
+                    {loading ? "Processing..." : "Save Automation Settings"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={loading || testingAutomation}
+                    onClick={handleTestAutomation}
+                    className="flex-1 py-3.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-sm font-bold border border-slate-200 dark:border-slate-700 transition-all cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    {testingAutomation ? "Triggering..." : "Trigger Test Automation"}
+                  </button>
+                </div>
               </form>
             ) : tab === "MAILER" ? (
               <form onSubmit={handleMailerSubmit} className="space-y-4 animate-fadeIn">
