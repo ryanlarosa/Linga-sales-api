@@ -267,7 +267,7 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
       Total_Amount: parseNum(item.totalGrossAmountStr),
       Discount: parseNum(item.totalDiscountAmountStr),
       DiscountName: discountName,
-      Is_Void: item.isVoid, // UPPERCASE manually
+      Is_Void: String(item.isVoid).toUpperCase(), // UPPERCASE manually
       Void_Reason: item.voidError,
       VoidedBy: voidBy,
     };
