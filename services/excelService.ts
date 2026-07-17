@@ -447,21 +447,67 @@ export const exportTrendToExcel = async (
 
   // Helper formatting functions
   const fmtActual = (val: number) => (val === 0 ? "-" : val);
-  const fmtVar = (thisWk: number, otherVal: number) => {
-    const diff = thisWk - otherVal;
-    return diff === 0 ? "-" : diff;
+  const fmtVar = (val: number | string) => {
+    if (val === "na" || val === undefined) return "na";
+    return val === 0 ? "-" : val;
   };
+
+  // Group & sequence/sort data by brand
+  const getStoreBrand = (storeName: string, configuredBrand?: string) => {
+    if (configuredBrand) return configuredBrand;
+    const name = storeName.toLowerCase();
+    if (name.includes("common grounds")) return "Common Grounds";
+    if (name.includes("ldc")) return "LDC Kitchen+Coffee";
+    if (name.includes("the sum of us")) return "The Sum of Us";
+    if (name.includes("encounter coffee")) return "Encounter Coffee";
+    return "Other";
+  };
+
+  // Pre-calculate parsed store-level rows with their variance states
+  const parsedRows = trendData.map((row) => {
+    const thisWk = row.thisWk || 0;
+    const lastWk = row.lastWk || 0;
+    const lastMth = row.lastMth || 0;
+    const lastYr = row.lastYr || 0;
+    
+    return {
+      ...row,
+      thisWk,
+      lastWk,
+      lastMth,
+      lastYr,
+      brand: getStoreBrand(row.storeName, row.brand),
+      varLw: (thisWk === 0 || lastWk === 0) ? "na" : (thisWk - lastWk),
+      varLm: (thisWk === 0 || lastMth === 0) ? "na" : (thisWk - lastMth),
+      varLy: (thisWk === 0 || lastYr === 0) ? "na" : (thisWk - lastYr),
+    };
+  });
+
+  // Calculate Company Level totals (actuals are straight sums)
+  const totalThisWk = parsedRows.reduce((sum, r) => sum + r.thisWk, 0);
+  const totalLastWk = parsedRows.reduce((sum, r) => sum + r.lastWk, 0);
+  const totalLastMth = parsedRows.reduce((sum, r) => sum + r.lastMth, 0);
+  const totalLastYr = parsedRows.reduce((sum, r) => sum + r.lastYr, 0);
+
+  // Calculate Company Level variances (summing store variances that are not "na")
+  const lwVars = parsedRows.filter(r => r.varLw !== "na").map(r => r.varLw as number);
+  const lmVars = parsedRows.filter(r => r.varLm !== "na").map(r => r.varLm as number);
+  const lyVars = parsedRows.filter(r => r.varLy !== "na").map(r => r.varLy as number);
+
+  const totalVarLw = lwVars.length > 0 ? lwVars.reduce((sum, v) => sum + v, 0) : "na";
+  const totalVarLm = lmVars.length > 0 ? lmVars.reduce((sum, v) => sum + v, 0) : "na";
+  const totalVarLy = lyVars.length > 0 ? lyVars.reduce((sum, v) => sum + v, 0) : "na";
 
   // Add Totals (Company level) first, styled beautifully
   const totalRow = worksheet.addRow([
     "Total (Company level)",
-    fmtActual(totals.thisWk),
-    fmtActual(totals.lastWk),
-    fmtActual(totals.lastMth),
-    fmtActual(totals.lastYr),
-    fmtVar(totals.thisWk, totals.lastWk),
-    fmtVar(totals.thisWk, totals.lastMth),
-    fmtVar(totals.thisWk, totals.lastYr),
+    fmtActual(totalThisWk),
+    fmtActual(totalLastWk),
+    fmtActual(totalLastMth),
+    fmtActual(totalLastYr),
+    fmtVar(totalVarLw),
+    fmtVar(totalVarLm),
+    fmtVar(totalVarLy),
   ]);
   totalRow.height = 18;
 
@@ -532,24 +578,13 @@ export const exportTrendToExcel = async (
     }
   }
 
-  // 1. Group & sequence/sort data by brand
-  const getStoreBrand = (storeName: string, configuredBrand?: string) => {
-    if (configuredBrand) return configuredBrand;
-    const name = storeName.toLowerCase();
-    if (name.includes("common grounds")) return "Common Grounds";
-    if (name.includes("ldc")) return "LDC Kitchen+Coffee";
-    if (name.includes("the sum of us")) return "The Sum of Us";
-    if (name.includes("encounter coffee")) return "Encounter Coffee";
-    return "Other";
-  };
-
-  const groupedByBrand: { [brand: string]: any[] } = {};
-  trendData.forEach((row) => {
-    const brand = getStoreBrand(row.storeName, row.brand);
-    if (!groupedByBrand[brand]) {
-      groupedByBrand[brand] = [];
+  // Group the parsedRows by brand
+  const groupedByBrand: { [brand: string]: typeof parsedRows } = {};
+  parsedRows.forEach((row) => {
+    if (!groupedByBrand[row.brand]) {
+      groupedByBrand[row.brand] = [];
     }
-    groupedByBrand[brand].push(row);
+    groupedByBrand[row.brand].push(row);
   });
 
   const brandOrder = await getBrandOrder();
@@ -569,44 +604,25 @@ export const exportTrendToExcel = async (
     );
   });
 
-  // Value formatting helpers
-  const formatVal = (val: number) => (val === 0 ? "na" : val);
-  const formatVar = (thisWk: number, otherVal: number) => {
-    if (thisWk === 0 || otherVal === 0) return "na";
-    return thisWk - otherVal;
-  };
-
   // Write grouped data
   sortedBrands.forEach((brand) => {
     const brandStores = groupedByBrand[brand];
 
     // Sum totals for the brand
-    const brandThisWk = brandStores.reduce(
-      (sum, r) => sum + (r.thisWk || 0),
-      0,
-    );
-    const brandLastWk = brandStores.reduce(
-      (sum, r) => sum + (r.lastWk || 0),
-      0,
-    );
-    const brandLastMth = brandStores.reduce(
-      (sum, r) => sum + (r.lastMth || 0),
-      0,
-    );
-    const brandLastYr = brandStores.reduce(
-      (sum, r) => sum + (r.lastYr || 0),
-      0,
-    );
+    const brandThisWk = brandStores.reduce((sum, r) => sum + r.thisWk, 0);
+    const brandLastWk = brandStores.reduce((sum, r) => sum + r.lastWk, 0);
+    const brandLastMth = brandStores.reduce((sum, r) => sum + r.lastMth, 0);
+    const brandLastYr = brandStores.reduce((sum, r) => sum + r.lastYr, 0);
+
+    const bLwVars = brandStores.filter(r => r.varLw !== "na").map(r => r.varLw as number);
+    const bLmVars = brandStores.filter(r => r.varLm !== "na").map(r => r.varLm as number);
+    const bLyVars = brandStores.filter(r => r.varLy !== "na").map(r => r.varLy as number);
+
+    const brandVarLw = bLwVars.length > 0 ? bLwVars.reduce((sum, v) => sum + v, 0) : "na";
+    const brandVarLm = bLmVars.length > 0 ? bLmVars.reduce((sum, v) => sum + v, 0) : "na";
+    const brandVarLy = bLyVars.length > 0 ? bLyVars.reduce((sum, v) => sum + v, 0) : "na";
 
     const hasMultiple = brandStores.length > 1;
-
-    // Helper for formatting actual values: 0 -> "-"
-    const fmtActual = (val: number) => (val === 0 ? "-" : val);
-    // Helper for formatting variance values: 0 -> "-"
-    const fmtVar = (thisWk: number, otherVal: number) => {
-      const diff = thisWk - otherVal;
-      return diff === 0 ? "-" : diff;
-    };
 
     if (hasMultiple) {
       // 1. Write Brand Header/Total Row (Bold, brand name in column A, sums in others)
@@ -616,9 +632,9 @@ export const exportTrendToExcel = async (
         fmtActual(brandLastWk),
         fmtActual(brandLastMth),
         fmtActual(brandLastYr),
-        fmtVar(brandThisWk, brandLastWk),
-        fmtVar(brandThisWk, brandLastMth),
-        fmtVar(brandThisWk, brandLastYr),
+        fmtVar(brandVarLw),
+        fmtVar(brandVarLm),
+        fmtVar(brandVarLy),
       ]);
       brandTotalRow.height = 18;
 
@@ -691,9 +707,9 @@ export const exportTrendToExcel = async (
           fmtActual(row.lastWk),
           fmtActual(row.lastMth),
           fmtActual(row.lastYr),
-          fmtVar(row.thisWk, row.lastWk),
-          fmtVar(row.thisWk, row.lastMth),
-          fmtVar(row.thisWk, row.lastYr),
+          fmtVar(row.varLw),
+          fmtVar(row.varLm),
+          fmtVar(row.varLy),
         ]);
         storeRow.height = 16;
 
@@ -762,9 +778,9 @@ export const exportTrendToExcel = async (
         fmtActual(store.lastWk),
         fmtActual(store.lastMth),
         fmtActual(store.lastYr),
-        fmtVar(store.thisWk, store.lastWk),
-        fmtVar(store.thisWk, store.lastMth),
-        fmtVar(store.thisWk, store.lastYr),
+        fmtVar(store.varLw),
+        fmtVar(store.varLm),
+        fmtVar(store.varLy),
       ]);
       singleRow.height = 16;
 
