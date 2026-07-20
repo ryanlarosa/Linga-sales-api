@@ -2393,7 +2393,7 @@ async function runDailyAutomation(isForced = false) {
     };
 
     // 4. Fetch stores
-    const allStores = await getStoresBackend();
+    const allStores = await getActiveStores();
     const targetStoreIds = settings.selectedStores || [];
     const filteredStores = allStores.filter(store => {
         if (targetStoreIds.length > 0) {
