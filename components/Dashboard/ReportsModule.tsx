@@ -1,13 +1,9 @@
 import React, { useState, useMemo, useRef } from "react";
 import { FetchedData } from "../../types";
-import { exportAnalysisToExcel } from "../../services/excelService";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import { 
-  ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend
-} from 'recharts';
-import { 
-  TrendingUp, Users, FileText, Gift, Trash2, ShieldAlert, Award, Clock, DollarSign, Download
+  TrendingUp, Users, FileText, Gift, Trash2, Award, Calendar, Download, Landmark, FileCheck, ClipboardList, PenTool
 } from 'lucide-react';
 
 import { parseCurrency, formatAED } from "./Reports/ReportUtils";
@@ -19,135 +15,186 @@ interface ReportsProps {
   selectedStoreName: string;
 }
 
-const COLORS = ['#e11d48', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6'];
-
 const ReportsModule: React.FC<ReportsProps> = ({
   data,
   fromDate,
   selectedStoreName,
 }) => {
-  const [operationalTarget, setOperationalTarget] = useState<number>(0);
-  const [modName, setModName] = useState("MANAGER");
-  const [bohName, setBohName] = useState("CHEF");
-  const [exporting, setExporting] = useState(false);
-  const dashboardRef = useRef<HTMLDivElement>(null);
+  const [modName, setModName] = useState("RETCHEL");
+  const [chefName, setChefName] = useState("JAMES KAKADU");
+  const [reservations, setReservations] = useState(0);
+  const [noShows, setNoShows] = useState(0);
+  const [walkIns, setWalkIns] = useState(0);
+  
+  // Notes / Comments States
+  const [specialEvents, setSpecialEvents] = useState("");
+  const [vips, setVips] = useState("");
+  const [complaints, setComplaints] = useState("");
+  const [dayComments, setDayComments] = useState("");
+  const [tomorrowBookings, setTomorrowBookings] = useState("");
 
-  // --- DERIVED STATS ---
+  const [exporting, setExporting] = useState(false);
+  const reportRef = useRef<HTMLDivElement>(null);
+
+  // --- STATS DERIVATION ---
   const stats = useMemo(() => {
     if (!data || !data.sales || data.sales.length === 0) return null;
-    let grossReceiptSum = 0;
-    let net = 0;
-    let tax = 0;
-    let discTotal = 0;
-    let guestCount = 0;
-    let totalTips = 0;
 
-    const segments: Record<string, { revenue: number; covers: number; checks: number }> = {
-      Breakfast: { revenue: 0, covers: 0, checks: 0 },
-      Lunch: { revenue: 0, covers: 0, checks: 0 },
-      Dinner: { revenue: 0, covers: 0, checks: 0 },
-      Other: { revenue: 0, covers: 0, checks: 0 },
+    let grossSales = 0;
+    let netSales = 0;
+    let totalDiscount = 0;
+    let totalCovers = 0;
+
+    // Payment Type Map
+    const payments: Record<string, { amount: number; count: number }> = {
+      CASH: { amount: 0, count: 0 },
+      VISA: { amount: 0, count: 0 },
+      "MASTER CARD": { amount: 0, count: 0 },
+      AMEX: { amount: 0, count: 0 },
+      CLUB: { amount: 0, count: 0 },
+      DELIVEROO: { amount: 0, count: 0 },
+      PEEKABOX: { amount: 0, count: 0 },
+      COMPLIMENTARY: { amount: 0, count: 0 },
+      "MARKETING COMPLIMENTARY": { amount: 0, count: 0 },
     };
 
     data.sales.forEach((s) => {
-      const netVal = parseCurrency(s.netSalesStr);
-      const taxVal = parseCurrency(s.totalTaxAmountStr);
-      const grossReceipt = parseCurrency(s.grossReceiptStr);
-
-      net += netVal;
-      tax += taxVal;
-      grossReceiptSum += grossReceipt;
-      guestCount += s.guestCount || 0;
-
-      const dateObj = new Date(s.saleOpenTime);
-      const h = isNaN(dateObj.getTime())
-        ? parseInt(s.saleOpenTime.split(":")[0])
-        : dateObj.getHours();
-
-      let seg = "Other";
-      if (h >= 6 && h < 11) seg = "Breakfast";
-      else if (h >= 11 && h < 16) seg = "Lunch";
-      else if (h >= 16 && h < 24) seg = "Dinner";
-
-      segments[seg].revenue += netVal;
-      segments[seg].covers += s.guestCount || 0;
-      segments[seg].checks += 1;
+      grossSales += parseCurrency(s.grossReceiptStr);
+      netSales += parseCurrency(s.netSalesStr);
+      totalCovers += s.guestCount || 0;
     });
 
     data.saleDetails.forEach((d) => {
       if (d.check !== "Total") {
-        discTotal += parseCurrency(d.discountAmtStr);
+        totalDiscount += parseCurrency(d.discountAmtStr);
       }
     });
 
+    // Populate Payment Tallies if available in backend payload
     if (data.paymentSummary) {
       data.paymentSummary.forEach((p) => {
-        totalTips += p.tips || 0;
+        const type = p.name ? p.name.toUpperCase() : "";
+        let matched = false;
+        Object.keys(payments).forEach((key) => {
+          if (type.includes(key)) {
+            payments[key].amount += p.amount || 0;
+            payments[key].count += p.count || 0;
+            matched = true;
+          }
+        });
+        if (!matched && p.amount > 0) {
+          // Put in Cash/Card depending on name
+          if (type.includes("CARD")) {
+            payments["MASTER CARD"].amount += p.amount || 0;
+          } else {
+            payments["CASH"].amount += p.amount || 0;
+          }
+        }
       });
     }
 
-    const departmentMix: Record<string, number> = {};
+    // Ensure total sum matches payments
+    const totalPayments = Object.values(payments).reduce((acc, p) => acc + p.amount, 0);
+
+    // Revenue breakdown by department
+    const departments: Record<string, number> = {
+      Food: 0,
+      Beverage: 0,
+      "Rise & Dawn": 0,
+      "Encounter + Retail": 0,
+    };
+
     data.detailedMenu.forEach((m) => {
       const val = parseCurrency(m.totalGrossAmountStr);
-      const dept = m.departmentName || "Unassigned";
-      departmentMix[dept] = (departmentMix[dept] || 0) + val;
+      const category = m.categoryName || "";
+      const deptName = m.departmentName || "";
+      
+      if (deptName.toUpperCase().includes("FOOD") || category.toUpperCase().includes("FOOD")) {
+        departments["Food"] += val;
+      } else if (deptName.toUpperCase().includes("BEVERAGE") || category.toUpperCase().includes("BEVERAGE") || category.toUpperCase().includes("DRINK")) {
+        departments["Beverage"] += val;
+      } else if (deptName.toUpperCase().includes("RETAIL") || category.toUpperCase().includes("RETAIL")) {
+        departments["Encounter + Retail"] += val;
+      } else {
+        departments["Encounter + Retail"] += val;
+      }
     });
 
-    const voids = data.detailedMenu.filter(
-      (item) => item.isVoid === "Y" || item.isVoid === "true"
-    );
-    const totalVoidsVal = voids.reduce((acc, curr) => acc + parseCurrency(curr.grossAmountStr), 0);
-
-    const avgGuest = guestCount > 0 ? net / guestCount : 0;
-    const avgCheck = data.sales.length > 0 ? net / data.sales.length : 0;
-
-    // Segment data for pie chart
-    const segmentChartData = Object.entries(segments)
-      .map(([name, val]) => ({ name, value: Math.round(val.revenue) }))
-      .filter(item => item.value > 0);
-
-    // Department mix for bar chart
-    const departmentChartData = Object.entries(departmentMix)
-      .map(([name, value]) => ({ name, value: Math.round(value) }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 5);
-
-    // Top selling items
-    const menuMap = new Map<string, { name: string; count: number; gross: number }>();
+    // Top Selling Items list
+    const itemsMap = new Map<string, { name: string; gross: number }>();
     data.detailedMenu.forEach((m) => {
-      const curr = menuMap.get(m.menuName) || { name: m.menuName, count: 0, gross: 0 };
-      curr.count += m.quantity || 0;
+      const curr = itemsMap.get(m.menuName) || { name: m.menuName, gross: 0 };
       curr.gross += parseCurrency(m.totalGrossAmountStr);
-      menuMap.set(m.menuName, curr);
+      itemsMap.set(m.menuName, curr);
     });
-    const topItems = Array.from(menuMap.values())
+    const topItems = Array.from(itemsMap.values())
       .sort((a, b) => b.gross - a.gross)
       .slice(0, 5);
 
+    // Map saleId to ticketNo
+    const saleIdToTicketNo = new Map<string, string>();
+    data.sales.forEach((s) => {
+      saleIdToTicketNo.set(s.id, s.ticketNo);
+    });
+
+    // Group voids and comps by ticketNo
+    const checkVoids = new Map<string, number>();
+    const checkComps = new Map<string, number>();
+
+    data.detailedMenu.forEach((m) => {
+      const ticketNo = saleIdToTicketNo.get(m.saleId);
+      if (!ticketNo) return;
+      
+      const isVoid = m.isVoid === "Y" || m.isVoid === "true";
+      const val = parseCurrency(m.totalGrossAmountStr);
+      
+      if (isVoid) {
+        checkVoids.set(ticketNo, (checkVoids.get(ticketNo) || 0) + val);
+      }
+      
+      const discVal = m.totalDiscountAmountStr ? parseCurrency(m.totalDiscountAmountStr) : 0;
+      if (discVal > 0 && Math.abs(discVal - val) < 0.05) {
+        checkComps.set(ticketNo, (checkComps.get(ticketNo) || 0) + discVal);
+      }
+    });
+
+    // Discount ledger items
+    const discountLedger = data.saleDetails
+      .filter((d) => d.check !== "Total")
+      .map((d) => {
+        const checkNo = d.check || "N/A";
+        const voidAmt = checkVoids.get(checkNo) || 0;
+        const compAmt = checkComps.get(checkNo) || 0;
+        const discountAmt = parseCurrency(d.discountAmtStr);
+        return {
+          checkNo,
+          voidAmt,
+          compAmt,
+          discountAmt: compAmt > 0 ? 0 : discountAmt, // Avoid double counting
+          remarks: d.discountName || "General Discount"
+        };
+      });
+
     return {
-      gross: grossReceiptSum,
-      net,
-      tax,
-      discTotal,
-      guestCount,
-      avgGuest,
-      avgCheck,
-      totalTips,
-      totalVoidsVal,
-      voidsCount: voids.length,
-      checksCount: data.sales.length,
-      segmentChartData,
-      departmentChartData,
-      topItems
+      grossSales,
+      netSales,
+      totalDiscount,
+      totalCovers,
+      averageCheck: totalCovers > 0 ? netSales / totalCovers : 0,
+      departments,
+      payments,
+      totalPayments,
+      topItems,
+      discountLedger
     };
   }, [data]);
 
   const handleExportPDF = async () => {
-    if (!dashboardRef.current) return;
+    if (!reportRef.current) return;
     setExporting(true);
     try {
       const isDark = document.documentElement.classList.contains("dark");
-      const canvas = await html2canvas(dashboardRef.current, {
+      const canvas = await html2canvas(reportRef.current, {
         backgroundColor: isDark ? "#020617" : "#f8fafc",
         scale: 2,
         useCORS: true,
@@ -155,12 +202,12 @@ const ReportsModule: React.FC<ReportsProps> = ({
       });
       const imgData = canvas.toDataURL("image/png");
       const pdf = new jsPDF({
-        orientation: "landscape",
+        orientation: "portrait",
         unit: "px",
         format: [canvas.width, canvas.height],
       });
       pdf.addImage(imgData, "PNG", 0, 0, canvas.width, canvas.height);
-      pdf.save(`Executive_Summary_${selectedStoreName}_${fromDate}.pdf`);
+      pdf.save(`DSR_Report_${selectedStoreName}_${fromDate}.pdf`);
     } catch (err) {
       console.error("PDF Export Failed:", err);
     } finally {
@@ -168,7 +215,7 @@ const ReportsModule: React.FC<ReportsProps> = ({
     }
   };
 
-  if (!data) {
+  if (!data || !stats) {
     return (
       <div className="flex flex-col items-center justify-center text-slate-400 py-20">
         <div className="w-12 h-12 border-4 border-slate-200 border-t-rose-600 rounded-full animate-spin mb-4"></div>
@@ -177,15 +224,12 @@ const ReportsModule: React.FC<ReportsProps> = ({
     );
   }
 
-  const variance = (stats?.net || 0) - operationalTarget;
-  const variancePct = operationalTarget > 0 ? (variance / operationalTarget) * 100 : 0;
-
   return (
-    <div className="px-8 space-y-6 max-w-[1600px] mx-auto animate-fadeIn pb-12" ref={dashboardRef}>
+    <div className="px-8 space-y-6 max-w-[1600px] mx-auto animate-fadeIn pb-12">
       {/* Upper Control Bar */}
       <div className="flex justify-between items-center bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 transition-colors">
         <div>
-          <h3 className="text-sm font-bold dark:text-white">Daily Executive Summary</h3>
+          <h3 className="text-sm font-bold dark:text-white">Daily Operations Recap & DSR</h3>
           <p className="text-xs text-slate-500">{selectedStoreName} — {fromDate}</p>
         </div>
         <button
@@ -194,201 +238,258 @@ const ReportsModule: React.FC<ReportsProps> = ({
           className="flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-md shadow-rose-600/10 disabled:opacity-50 transition-all cursor-pointer"
         >
           <Download className="w-4 h-4" />
-          {exporting ? "Generating PDF..." : "Export Executive Summary PDF"}
+          {exporting ? "Generating PDF..." : "Export EOD PDF Report"}
         </button>
       </div>
 
-      {stats && (
-        <>
-          {/* Executive KPI Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 transition-all hover:shadow-md">
-              <div className="flex justify-between items-start text-slate-400">
-                <span className="text-[10px] font-black uppercase tracking-wider">Net Sales</span>
-                <TrendingUp className="w-4 h-4 text-emerald-500" />
-              </div>
-              <p className="text-xl font-black mt-2 dark:text-white">{formatAED(stats.net)}</p>
-              <p className="text-[9px] text-slate-500 mt-1">Gross: {formatAED(stats.gross)}</p>
+      <div ref={reportRef} className="space-y-6 bg-slate-50 dark:bg-slate-950 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 transition-colors">
+        {/* Main Header */}
+        <div className="bg-[#001f3f] dark:bg-slate-900 text-white py-4 px-6 rounded-2xl flex justify-between items-center">
+          <h2 className="text-base font-black tracking-widest uppercase">{selectedStoreName}</h2>
+          <span className="text-xs font-bold tracking-widest uppercase">{fromDate}</span>
+        </div>
+
+        {/* Executive DSR Row */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left Column: DSR Core Metrics */}
+          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-2">
+              <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Metric Summary</h4>
+              <ClipboardList className="w-4 h-4 text-rose-500" />
             </div>
 
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 transition-all hover:shadow-md">
-              <div className="flex justify-between items-start text-slate-400">
-                <span className="text-[10px] font-black uppercase tracking-wider">Guest Count</span>
-                <Users className="w-4 h-4 text-rose-500" />
-              </div>
-              <p className="text-xl font-black mt-2 dark:text-white">{stats.guestCount}</p>
-              <p className="text-[9px] text-slate-500 mt-1">Checks: {stats.checksCount}</p>
-            </div>
-
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 transition-all hover:shadow-md">
-              <div className="flex justify-between items-start text-slate-400">
-                <span className="text-[10px] font-black uppercase tracking-wider">Average Ticket</span>
-                <Clock className="w-4 h-4 text-blue-500" />
-              </div>
-              <p className="text-xl font-black mt-2 dark:text-white">{formatAED(stats.avgCheck)}</p>
-              <p className="text-[9px] text-slate-500 mt-1">Per Guest: {formatAED(stats.avgGuest)}</p>
-            </div>
-
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 transition-all hover:shadow-md">
-              <div className="flex justify-between items-start text-slate-400">
-                <span className="text-[10px] font-black uppercase tracking-wider">Security Audits</span>
-                <ShieldAlert className="w-4 h-4 text-amber-500" />
-              </div>
-              <p className="text-xl font-black mt-2 dark:text-white">{formatAED(stats.discTotal)}</p>
-              <p className="text-[9px] text-slate-500 mt-1">Voids: {stats.voidsCount} ({formatAED(stats.totalVoidsVal)})</p>
-            </div>
-          </div>
-
-          {/* Operational Target Block */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 transition-colors flex flex-col justify-between">
+            <div className="grid grid-cols-2 gap-4 text-xs">
               <div>
-                <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-3">Daily Operations Target</h4>
-                <div className="flex items-center gap-3">
-                  <span className="text-xs font-bold text-slate-500">Target AED:</span>
-                  <input
-                    type="number"
-                    value={operationalTarget || ""}
-                    onChange={(e) => setOperationalTarget(Number(e.target.value))}
-                    placeholder="Enter sales target..."
-                    className="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-1.5 text-xs font-bold outline-none focus:border-rose-600 transition-all text-slate-900 dark:text-white"
-                  />
-                </div>
-              </div>
-              <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center">
-                <span className="text-xs font-medium text-slate-500">Performance Variance:</span>
-                <span className={`text-xs font-black ${variance >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
-                  {variance >= 0 ? "+" : ""}{formatAED(variance)} ({variancePct.toFixed(1)}%)
-                </span>
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 transition-colors lg:col-span-2">
-              <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-3">Duty Assignment Logs</h4>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Manager on Duty</label>
-                  <input
-                    value={modName}
+                <span className="text-[9px] font-bold text-slate-400 uppercase">MOD Name / Chef</span>
+                <div className="flex gap-2 mt-1">
+                  <input 
+                    value={modName} 
                     onChange={(e) => setModName(e.target.value)}
-                    className="w-full text-xs font-black text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-950 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 outline-none focus:border-rose-600 transition-all"
+                    className="w-1/2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-2 py-1 rounded-lg text-[10px] font-bold outline-none text-slate-900 dark:text-white"
+                  />
+                  <input 
+                    value={chefName} 
+                    onChange={(e) => setChefName(e.target.value)}
+                    className="w-1/2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-2 py-1 rounded-lg text-[10px] font-bold outline-none text-slate-900 dark:text-white"
                   />
                 </div>
-                <div>
-                  <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Kitchen Lead (BOH)</label>
-                  <input
-                    value={bohName}
-                    onChange={(e) => setBohName(e.target.value)}
-                    className="w-full text-xs font-black text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-950 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 outline-none focus:border-rose-600 transition-all"
-                  />
+              </div>
+              <div>
+                <span className="text-[9px] font-bold text-slate-400 uppercase">Total Covers</span>
+                <p className="text-sm font-black mt-1 dark:text-white">{stats.totalCovers}</p>
+              </div>
+              
+              <div>
+                <span className="text-[9px] font-bold text-slate-400 uppercase">Reservations</span>
+                <input 
+                  type="number" 
+                  value={reservations} 
+                  onChange={(e) => setReservations(Number(e.target.value))}
+                  className="w-full mt-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-2 py-1 rounded-lg text-xs font-bold outline-none text-slate-900 dark:text-white"
+                />
+              </div>
+              <div>
+                <span className="text-[9px] font-bold text-slate-400 uppercase">Walk-Ins</span>
+                <input 
+                  type="number" 
+                  value={walkIns} 
+                  onChange={(e) => setWalkIns(Number(e.target.value))}
+                  className="w-full mt-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-2 py-1 rounded-lg text-xs font-bold outline-none text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div className="col-span-2 pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Grand Sales:</span>
+                  <span className="font-black text-slate-800 dark:text-slate-200">{formatAED(stats.grossSales)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">NET Daily Revenue:</span>
+                  <span className="font-black text-emerald-500">{formatAED(stats.netSales)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Average Check per Guest:</span>
+                  <span className="font-black text-slate-800 dark:text-slate-200">{formatAED(stats.averageCheck)}</span>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Visualization Charts Block */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 transition-colors">
-              <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-4">Meal Period Revenue Split</h4>
-              <div className="h-[240px] flex items-center justify-center">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={stats.segmentChartData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={80}
-                      paddingAngle={4}
-                      dataKey="value"
-                    >
-                      {stats.segmentChartData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => `${value} AED`} />
-                    <Legend verticalAlign="bottom" height={36} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
+          {/* Middle Column: Department Revenue Breakdown */}
+          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+            <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-2">
+              <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Revenue mix</h4>
+              <TrendingUp className="w-4 h-4 text-emerald-500" />
             </div>
 
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 transition-colors">
-              <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-4">Top 5 Departments Gross</h4>
-              <div className="h-[240px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={stats.departmentChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                    <YAxis tick={{ fontSize: 10 }} />
-                    <Tooltip formatter={(value) => `${value} AED`} />
-                    <Bar dataKey="value" fill="#e11d48" radius={[4, 4, 0, 0]}>
-                      {stats.departmentChartData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+            <div className="space-y-2.5 text-xs">
+              {Object.entries(stats.departments).map(([name, amount]) => (
+                <div key={name} className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-1.5 last:border-0">
+                  <span className="text-slate-400">{name}</span>
+                  <span className="font-black text-slate-800 dark:text-slate-200">{formatAED(amount)}</span>
+                </div>
+              ))}
+              <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-1.5">
+                <span className="text-slate-400">Discounted Deductions:</span>
+                <span className="font-bold text-rose-500">-{formatAED(stats.totalDiscount)}</span>
+              </div>
+              <div className="flex justify-between items-center pt-2">
+                <span className="text-xs font-bold text-slate-900 dark:text-white">Total Revenue:</span>
+                <span className="text-sm font-black text-emerald-500">{formatAED(stats.netSales)}</span>
               </div>
             </div>
           </div>
 
-          {/* Lower Performers and Logs Table */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 transition-colors lg:col-span-2">
-              <div className="flex justify-between items-center mb-4">
-                <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-400">Top Performing Menu Items</h4>
+          {/* Right Column: Payment Settlement Split */}
+          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+            <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-2">
+              <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Payment Tally</h4>
+              <Landmark className="w-4 h-4 text-blue-500" />
+            </div>
+
+            <div className="space-y-2 text-xs overflow-y-auto max-h-[200px] custom-scrollbar">
+              {Object.entries(stats.payments).map(([name, val]) => (
+                <div key={name} className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-1 last:border-0">
+                  <span className="text-slate-400 text-[10px]">{name}</span>
+                  <span className="font-black text-slate-800 dark:text-slate-200">{formatAED(val.amount)}</span>
+                </div>
+              ))}
+              <div className="flex justify-between items-center pt-2 border-t border-slate-100 dark:border-slate-800">
+                <span className="text-xs font-bold text-slate-900 dark:text-white">Total Payments:</span>
+                <span className="font-black text-slate-800 dark:text-slate-200">{formatAED(stats.totalPayments || stats.grossSales)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Operational Notes, Top Selling, and Large Expenses */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Notes & Special Events Comments */}
+          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4 lg:col-span-2">
+            <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-2">
+              <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Operations & Duty Notes</h4>
+              <PenTool className="w-4 h-4 text-amber-500" />
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Special Events / VIPs</label>
+                <textarea
+                  value={specialEvents}
+                  onChange={(e) => setSpecialEvents(e.target.value)}
+                  placeholder="Enter events or VIP notes..."
+                  className="w-full text-xs font-medium text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-950 p-2 rounded-xl border border-slate-200 dark:border-slate-800 outline-none focus:border-rose-600 transition-all h-16 resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Guest Complaints & Recovery</label>
+                <textarea
+                  value={complaints}
+                  onChange={(e) => setComplaints(e.target.value)}
+                  placeholder="Enter guest feedback and recovery solutions..."
+                  className="w-full text-xs font-medium text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-950 p-2 rounded-xl border border-slate-200 dark:border-slate-800 outline-none focus:border-rose-600 transition-all h-16 resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Overall Day Comments</label>
+                <textarea
+                  value={dayComments}
+                  onChange={(e) => setDayComments(e.target.value)}
+                  placeholder="Summarize the shift flow (e.g. Target progress, flow of guests, etc.)..."
+                  className="w-full text-xs font-medium text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-950 p-2 rounded-xl border border-slate-200 dark:border-slate-800 outline-none focus:border-rose-600 transition-all h-20 resize-none"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Right section: Top Selling List and Tomorrow's bookings */}
+          <div className="space-y-4">
+            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+              <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-2">
+                <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Top Selling Items</h4>
                 <Award className="w-4 h-4 text-amber-500" />
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs text-left">
-                  <thead>
-                    <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-400 uppercase tracking-widest text-[9px]">
-                      <th className="py-2">Item Name</th>
-                      <th className="py-2 text-center">Qty Sold</th>
-                      <th className="py-2 text-right">Gross Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {stats.topItems.map((item, idx) => (
-                      <tr key={idx} className="border-b border-slate-100 dark:border-slate-800 last:border-0">
-                        <td className="py-2.5 font-semibold text-slate-800 dark:text-slate-200">{item.name}</td>
-                        <td className="py-2.5 text-center font-bold text-slate-600 dark:text-slate-400">{item.count}</td>
-                        <td className="py-2.5 text-right font-black text-slate-900 dark:text-white">{formatAED(item.gross)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="space-y-2 text-xs">
+                {stats.topItems.map((item, idx) => (
+                  <div key={idx} className="flex justify-between items-center border-b border-slate-50 dark:border-slate-800 pb-1.5 last:border-0">
+                    <span className="text-slate-800 dark:text-slate-200 font-semibold">{item.name}</span>
+                    <span className="font-black text-slate-900 dark:text-white">{formatAED(item.gross)}</span>
+                  </div>
+                ))}
               </div>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 transition-colors">
-              <div className="flex justify-between items-center mb-4">
-                <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-400">DSR Financial Tally</h4>
-                <DollarSign className="w-4 h-4 text-emerald-500" />
+            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+              <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-2">
+                <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Tomorrow's Bookings</h4>
+                <Calendar className="w-4 h-4 text-rose-500" />
               </div>
-              <div className="space-y-3 text-xs">
-                <div className="flex justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
-                  <span className="text-slate-400">Discounts Processed</span>
-                  <span className="font-bold text-rose-500">-{formatAED(stats.discTotal)}</span>
-                </div>
-                <div className="flex justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
-                  <span className="text-slate-400">Voids Registered</span>
-                  <span className="font-bold text-rose-500">-{formatAED(stats.totalVoidsVal)}</span>
-                </div>
-                <div className="flex justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
-                  <span className="text-slate-400">Tax Collected</span>
-                  <span className="font-bold text-slate-800 dark:text-slate-200">{formatAED(stats.tax)}</span>
-                </div>
-                <div className="flex justify-between pb-2">
-                  <span className="text-slate-400">Tips Declared</span>
-                  <span className="font-bold text-emerald-500">+{formatAED(stats.totalTips)}</span>
-                </div>
-              </div>
+              <input
+                value={tomorrowBookings}
+                onChange={(e) => setTomorrowBookings(e.target.value)}
+                placeholder="Tomorrow's bookings..."
+                className="w-full text-xs font-semibold text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-950 p-2 rounded-xl border border-slate-200 dark:border-slate-800 outline-none focus:border-rose-600 transition-all"
+              />
             </div>
           </div>
-        </>
-      )}
+        </div>
+
+        {/* Lower Section: Discount Ledger Audit */}
+        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4">
+          <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-2">
+            <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Discount Audit Page</h4>
+            <FileCheck className="w-4 h-4 text-emerald-500" />
+          </div>
+
+          <div className="overflow-x-auto custom-scrollbar">
+            <table className="w-full text-xs text-left border-collapse">
+              <thead>
+                <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-400 uppercase tracking-widest text-[9px]">
+                  <th className="py-2.5 px-3">Receipt Check No.</th>
+                  <th className="py-2.5 px-3 text-center">Void</th>
+                  <th className="py-2.5 px-3 text-center">Comp</th>
+                  <th className="py-2.5 px-3 text-center">Discount</th>
+                  <th className="py-2.5 px-3">Remarks / Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.discountLedger.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-6 text-center text-slate-400 italic">No discounts or voids processed today.</td>
+                  </tr>
+                ) : (
+                  stats.discountLedger.map((row, idx) => (
+                    <tr key={idx} className="border-b border-slate-50 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-900/50">
+                      <td className="py-2 px-3 font-bold text-slate-700 dark:text-slate-300">{row.checkNo}</td>
+                      <td className="py-2 px-3 text-center text-rose-500 font-semibold">{row.voidAmt > 0 ? formatAED(row.voidAmt) : "-"}</td>
+                      <td className="py-2 px-3 text-center text-rose-500 font-semibold">{row.compAmt > 0 ? formatAED(row.compAmt) : "-"}</td>
+                      <td className="py-2 px-3 text-center text-rose-600 font-black">{row.discountAmt > 0 ? formatAED(row.discountAmt) : "-"}</td>
+                      <td className="py-2 px-3 text-slate-600 dark:text-slate-400 font-medium">{row.remarks}</td>
+                    </tr>
+                  ))
+                )}
+                {stats.discountLedger.length > 0 && (
+                  <tr className="bg-slate-50 dark:bg-slate-950 font-black">
+                    <td className="py-3 px-3 uppercase text-[10px] text-slate-900 dark:text-white">Total</td>
+                    <td className="py-3 px-3 text-center text-rose-500">
+                      {formatAED(stats.discountLedger.reduce((acc, r) => acc + r.voidAmt, 0))}
+                    </td>
+                    <td className="py-3 px-3 text-center text-rose-500">
+                      {formatAED(stats.discountLedger.reduce((acc, r) => acc + r.compAmt, 0))}
+                    </td>
+                    <td className="py-3 px-3 text-center text-rose-600">
+                      {formatAED(stats.discountLedger.reduce((acc, r) => acc + r.discountAmt, 0))}
+                    </td>
+                    <td className="py-3 px-3"></td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
