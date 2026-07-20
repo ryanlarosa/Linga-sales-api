@@ -1,13 +1,14 @@
 
 import express from 'express';
 import cors from 'cors';
+import crypto from 'crypto';
 import axios from 'axios';
 import ExcelJS from 'exceljs';
 import nodemailer from 'nodemailer';
 import { google } from 'googleapis';
 import { Readable } from 'stream';
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { initializeFirestore, memoryLocalCache, doc, getDoc, setDoc, deleteDoc, collection, getDocs } from 'firebase/firestore';
+import { initializeFirestore, memoryLocalCache, doc, getDoc, setDoc, deleteDoc, collection, getDocs, updateDoc, query, where } from 'firebase/firestore';
 
 const app = express();
 
@@ -2635,6 +2636,191 @@ app.post('/api/v1/cron/test-automation', checkAuth, async (req, res) => {
         res.json({ success: true, ...summary });
     } catch (error) {
         console.error("[Manual Cron Trigger] Execution error:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// --- Database Operation APIs ---
+
+function hashPasswordBackend(password) {
+    return crypto.createHash('sha256').update(password).digest('hex');
+}
+
+// 1. User login (Public)
+app.post('/api/v1/db/login', async (req, res) => {
+    const { username, password } = req.body;
+    try {
+        const usersRef = collection(db, "users");
+        const q = query(usersRef, where("username", "==", username));
+        const querySnapshot = await getDocs(q);
+
+        if (querySnapshot.empty) {
+            return res.status(401).json({ error: "Invalid credentials." });
+        }
+
+        const hashedPassword = hashPasswordBackend(password);
+        let foundUser = null;
+
+        for (const d of querySnapshot.docs) {
+            const userData = d.data();
+            if (userData.password === password || userData.password === hashedPassword) {
+                // Auto-upgrade legacy plaintext passwords to SHA-256
+                if (userData.password === password) {
+                    try {
+                        await updateDoc(doc(db, "users", username), { password: hashedPassword });
+                        console.log(`[Security] Auto-upgraded password hash for user ${username}`);
+                    } catch (e) {
+                        console.error("Failed to auto-upgrade legacy plaintext password:", e.message);
+                    }
+                }
+                foundUser = {
+                    username: userData.username,
+                    role: userData.role,
+                    name: userData.name,
+                    allowedStores: userData.allowedStores
+                };
+                break;
+            }
+        }
+
+        if (foundUser) {
+            res.json({ success: true, user: foundUser });
+        } else {
+            res.status(401).json({ error: "Invalid credentials." });
+        }
+    } catch (error) {
+        console.error("Login verification failed:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 2. Stores operations
+app.get('/api/v1/db/stores', checkAuth, async (req, res) => {
+    try {
+        const stores = await getActiveStores();
+        res.json({ success: true, stores });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/v1/db/stores', checkAuth, async (req, res) => {
+    try {
+        const store = req.body;
+        await setDoc(doc(db, "stores", store.id), store);
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.delete('/api/v1/db/stores/:id', checkAuth, async (req, res) => {
+    try {
+        const { id } = req.params;
+        await deleteDoc(doc(db, "stores", id));
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 3. Users operations
+app.get('/api/v1/db/users', checkAuth, async (req, res) => {
+    try {
+        const snapshot = await getDocs(collection(db, "users"));
+        const users = [];
+        snapshot.forEach((d) => {
+            const data = d.data();
+            users.push({
+                username: data.username,
+                role: data.role,
+                name: data.name,
+                allowedStores: data.allowedStores
+            });
+        });
+        res.json({ success: true, users });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/v1/db/users', checkAuth, async (req, res) => {
+    try {
+        const user = req.body;
+        const userToSave = { ...user };
+        if (userToSave.password) {
+            userToSave.password = hashPasswordBackend(userToSave.password);
+        }
+        await setDoc(doc(db, "users", user.username), userToSave);
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.put('/api/v1/db/users/:username', checkAuth, async (req, res) => {
+    try {
+        const { username } = req.params;
+        const updates = req.body;
+        const updatesToSave = { ...updates };
+        if (updatesToSave.password) {
+            updatesToSave.password = hashPasswordBackend(updatesToSave.password);
+        }
+        await updateDoc(doc(db, "users", username), updatesToSave);
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.delete('/api/v1/db/users/:username', checkAuth, async (req, res) => {
+    try {
+        const { username } = req.params;
+        await deleteDoc(doc(db, "users", username));
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 4. Configs operations
+app.get('/api/v1/db/configs/:configId', checkAuth, async (req, res) => {
+    try {
+        const { configId } = req.params;
+        const snapshot = await getDoc(doc(db, "configs", configId));
+        if (snapshot.exists()) {
+            res.json({ success: true, data: snapshot.data() });
+        } else {
+            res.json({ success: true, data: null });
+        }
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/v1/db/configs/:configId', checkAuth, async (req, res) => {
+    try {
+        const { configId } = req.params;
+        const configData = req.body;
+        await setDoc(doc(db, "configs", configId), configData);
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 5. Report logs operations
+app.get('/api/v1/db/logs', checkAuth, async (req, res) => {
+    try {
+        const logsRef = collection(db, "report_logs");
+        const snapshot = await getDocs(logsRef);
+        const logs = [];
+        snapshot.forEach((d) => {
+            logs.push({ id: d.id, ...d.data() });
+        });
+        logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        res.json({ success: true, logs });
+    } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
