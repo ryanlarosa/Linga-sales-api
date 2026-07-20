@@ -724,7 +724,8 @@ async function fetchStoreTrendSummaryBackend(storeId, dates) {
 
   const formatDateParam = (d) => {
     const day = String(d.getUTCDate()).padStart(2, '0');
-    const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+    const month = months[d.getUTCMonth()];
     const year = d.getUTCFullYear();
     return `${day}-${month}-${year}`;
   };
@@ -2255,7 +2256,8 @@ async function fetchStoreSalesBackend(storeId, dates) {
   const results = {};
   const formatDateParam = (d) => {
     const day = String(d.getUTCDate()).padStart(2, '0');
-    const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+    const month = months[d.getUTCMonth()];
     const year = d.getUTCFullYear();
     return `${day}-${month}-${year}`;
   };
