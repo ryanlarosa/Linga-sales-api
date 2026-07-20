@@ -1,9 +1,7 @@
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo } from "react";
 import { FetchedData } from "../../types";
-import html2canvas from "html2canvas";
-import { jsPDF } from "jspdf";
 import { 
-  TrendingUp, Users, FileText, Gift, Trash2, Award, Calendar, Download, Landmark, FileCheck, ClipboardList, PenTool
+  TrendingUp, Users, Award, Calendar, Landmark, FileCheck, ClipboardList, PenTool
 } from 'lucide-react';
 
 import { parseCurrency, formatAED } from "./Reports/ReportUtils";
@@ -32,9 +30,6 @@ const ReportsModule: React.FC<ReportsProps> = ({
   const [complaints, setComplaints] = useState("");
   const [dayComments, setDayComments] = useState("");
   const [tomorrowBookings, setTomorrowBookings] = useState("");
-
-  const [exporting, setExporting] = useState(false);
-  const reportRef = useRef<HTMLDivElement>(null);
 
   // --- STATS DERIVATION ---
   const stats = useMemo(() => {
@@ -70,7 +65,6 @@ const ReportsModule: React.FC<ReportsProps> = ({
       }
     });
 
-    // Populate Payment Tallies if available in backend payload
     if (data.paymentSummary) {
       data.paymentSummary.forEach((p) => {
         const type = p.name ? p.name.toUpperCase() : "";
@@ -83,7 +77,6 @@ const ReportsModule: React.FC<ReportsProps> = ({
           }
         });
         if (!matched && p.amount > 0) {
-          // Put in Cash/Card depending on name
           if (type.includes("CARD")) {
             payments["MASTER CARD"].amount += p.amount || 0;
           } else {
@@ -93,10 +86,9 @@ const ReportsModule: React.FC<ReportsProps> = ({
       });
     }
 
-    // Ensure total sum matches payments
     const totalPayments = Object.values(payments).reduce((acc, p) => acc + p.amount, 0);
 
-    // Revenue breakdown by department
+    // Revenue breakdown
     const departments: Record<string, number> = {
       Food: 0,
       Beverage: 0,
@@ -120,7 +112,6 @@ const ReportsModule: React.FC<ReportsProps> = ({
       }
     });
 
-    // Top Selling Items list
     const itemsMap = new Map<string, { name: string; gross: number }>();
     data.detailedMenu.forEach((m) => {
       const curr = itemsMap.get(m.menuName) || { name: m.menuName, gross: 0 };
@@ -131,13 +122,11 @@ const ReportsModule: React.FC<ReportsProps> = ({
       .sort((a, b) => b.gross - a.gross)
       .slice(0, 5);
 
-    // Map saleId to ticketNo
     const saleIdToTicketNo = new Map<string, string>();
     data.sales.forEach((s) => {
       saleIdToTicketNo.set(s.id, s.ticketNo);
     });
 
-    // Group voids and comps by ticketNo
     const checkVoids = new Map<string, number>();
     const checkComps = new Map<string, number>();
 
@@ -158,22 +147,34 @@ const ReportsModule: React.FC<ReportsProps> = ({
       }
     });
 
-    // Discount ledger items
-    const discountLedger = data.saleDetails
+    // Group discounts by discount name/remark
+    const discountGroups = new Map<string, { remarks: string; count: number; voidAmt: number; compAmt: number; discountAmt: number }>();
+
+    data.saleDetails
       .filter((d) => d.check !== "Total")
-      .map((d) => {
+      .forEach((d) => {
+        const name = d.discountName || "General Discount";
         const checkNo = d.check || "N/A";
         const voidAmt = checkVoids.get(checkNo) || 0;
         const compAmt = checkComps.get(checkNo) || 0;
         const discountAmt = parseCurrency(d.discountAmtStr);
-        return {
-          checkNo,
-          voidAmt,
-          compAmt,
-          discountAmt: compAmt > 0 ? 0 : discountAmt, // Avoid double counting
-          remarks: d.discountName || "General Discount"
+        
+        const curr = discountGroups.get(name) || {
+          remarks: name,
+          count: 0,
+          voidAmt: 0,
+          compAmt: 0,
+          discountAmt: 0
         };
+        
+        curr.voidAmt += voidAmt;
+        curr.compAmt += compAmt;
+        curr.discountAmt += compAmt > 0 ? 0 : discountAmt;
+        curr.count += 1;
+        discountGroups.set(name, curr);
       });
+
+    const discountLedger = Array.from(discountGroups.values());
 
     return {
       grossSales,
@@ -189,32 +190,6 @@ const ReportsModule: React.FC<ReportsProps> = ({
     };
   }, [data]);
 
-  const handleExportPDF = async () => {
-    if (!reportRef.current) return;
-    setExporting(true);
-    try {
-      const isDark = document.documentElement.classList.contains("dark");
-      const canvas = await html2canvas(reportRef.current, {
-        backgroundColor: isDark ? "#020617" : "#f8fafc",
-        scale: 2,
-        useCORS: true,
-        logging: false,
-      });
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF({
-        orientation: "portrait",
-        unit: "px",
-        format: [canvas.width, canvas.height],
-      });
-      pdf.addImage(imgData, "PNG", 0, 0, canvas.width, canvas.height);
-      pdf.save(`DSR_Report_${selectedStoreName}_${fromDate}.pdf`);
-    } catch (err) {
-      console.error("PDF Export Failed:", err);
-    } finally {
-      setExporting(false);
-    }
-  };
-
   if (!data || !stats) {
     return (
       <div className="flex flex-col items-center justify-center text-slate-400 py-20">
@@ -226,132 +201,110 @@ const ReportsModule: React.FC<ReportsProps> = ({
 
   return (
     <div className="px-8 space-y-6 max-w-[1600px] mx-auto animate-fadeIn pb-12">
-      {/* Upper Control Bar */}
-      <div className="flex justify-between items-center bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 transition-colors">
+      {/* Upper Title Bar */}
+      <div className="flex justify-between items-center pb-2 border-b border-slate-200 dark:border-slate-800">
         <div>
-          <h3 className="text-sm font-bold dark:text-white">Daily Operations Recap & DSR</h3>
+          <h2 className="text-lg font-black dark:text-white uppercase tracking-wider">Daily Operations & DSR Recap</h2>
           <p className="text-xs text-slate-500">{selectedStoreName} — {fromDate}</p>
         </div>
-        <button
-          onClick={handleExportPDF}
-          disabled={exporting}
-          className="flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-md shadow-rose-600/10 disabled:opacity-50 transition-all cursor-pointer"
-        >
-          <Download className="w-4 h-4" />
-          {exporting ? "Generating PDF..." : "Export EOD PDF Report"}
-        </button>
       </div>
 
-      <div ref={reportRef} className="space-y-6 bg-slate-50 dark:bg-slate-950 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 transition-colors">
-        {/* Main Header */}
-        <div className="bg-[#001f3f] dark:bg-slate-900 text-white py-4 px-6 rounded-2xl flex justify-between items-center">
-          <h2 className="text-base font-black tracking-widest uppercase">{selectedStoreName}</h2>
-          <span className="text-xs font-bold tracking-widest uppercase">{fromDate}</span>
-        </div>
-
-        {/* Executive DSR Row */}
+      <div className="space-y-6 bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors duration-300">
+        
+        {/* Main DSR Summary Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column: DSR Core Metrics */}
-          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-2">
-              <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Metric Summary</h4>
-              <ClipboardList className="w-4 h-4 text-rose-500" />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 text-xs">
-              <div>
-                <span className="text-[9px] font-bold text-slate-400 uppercase">MOD Name / Chef</span>
-                <div className="flex gap-2 mt-1">
+          
+          {/* Section 1: DSR Metrics Table */}
+          <div className="space-y-3">
+            <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800 pb-2 flex items-center gap-2">
+              <ClipboardList className="w-4 h-4 text-rose-500" /> Operational Metrics
+            </h3>
+            <div className="space-y-2.5 text-xs">
+              <div className="flex justify-between items-center py-1 border-b border-slate-100 dark:border-slate-800">
+                <span className="text-slate-400">MOD / Chef:</span>
+                <div className="flex gap-1">
                   <input 
                     value={modName} 
                     onChange={(e) => setModName(e.target.value)}
-                    className="w-1/2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-2 py-1 rounded-lg text-[10px] font-bold outline-none text-slate-900 dark:text-white"
+                    className="w-20 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-1.5 py-0.5 rounded text-[10px] font-bold outline-none text-slate-900 dark:text-white"
                   />
                   <input 
                     value={chefName} 
                     onChange={(e) => setChefName(e.target.value)}
-                    className="w-1/2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-2 py-1 rounded-lg text-[10px] font-bold outline-none text-slate-900 dark:text-white"
+                    className="w-20 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-1.5 py-0.5 rounded text-[10px] font-bold outline-none text-slate-900 dark:text-white"
                   />
                 </div>
               </div>
-              <div>
-                <span className="text-[9px] font-bold text-slate-400 uppercase">Total Covers</span>
-                <p className="text-sm font-black mt-1 dark:text-white">{stats.totalCovers}</p>
+              <div className="flex justify-between items-center py-1 border-b border-slate-100 dark:border-slate-800">
+                <span className="text-slate-400">Total Covers:</span>
+                <span className="font-bold text-slate-850 dark:text-slate-105">{stats.totalCovers}</span>
               </div>
-              
-              <div>
-                <span className="text-[9px] font-bold text-slate-400 uppercase">Reservations</span>
+              <div className="flex justify-between items-center py-1 border-b border-slate-100 dark:border-slate-800">
+                <span className="text-slate-400">Reservations:</span>
                 <input 
                   type="number" 
                   value={reservations} 
                   onChange={(e) => setReservations(Number(e.target.value))}
-                  className="w-full mt-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-2 py-1 rounded-lg text-xs font-bold outline-none text-slate-900 dark:text-white"
+                  className="w-12 text-right bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-1.5 py-0.5 rounded text-[10px] font-bold outline-none text-slate-900 dark:text-white"
                 />
               </div>
-              <div>
-                <span className="text-[9px] font-bold text-slate-400 uppercase">Walk-Ins</span>
+              <div className="flex justify-between items-center py-1 border-b border-slate-100 dark:border-slate-800">
+                <span className="text-slate-400">Walk-Ins:</span>
                 <input 
                   type="number" 
                   value={walkIns} 
                   onChange={(e) => setWalkIns(Number(e.target.value))}
-                  className="w-full mt-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-2 py-1 rounded-lg text-xs font-bold outline-none text-slate-900 dark:text-white"
+                  className="w-12 text-right bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-1.5 py-0.5 rounded text-[10px] font-bold outline-none text-slate-900 dark:text-white"
                 />
               </div>
-
-              <div className="col-span-2 pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-400">Grand Sales:</span>
-                  <span className="font-black text-slate-800 dark:text-slate-200">{formatAED(stats.grossSales)}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-400">NET Daily Revenue:</span>
-                  <span className="font-black text-emerald-500">{formatAED(stats.netSales)}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-400">Average Check per Guest:</span>
-                  <span className="font-black text-slate-800 dark:text-slate-200">{formatAED(stats.averageCheck)}</span>
-                </div>
+              <div className="flex justify-between items-center py-1 border-b border-slate-100 dark:border-slate-800">
+                <span className="text-slate-400">Day Grand Sales:</span>
+                <span className="font-bold text-slate-900 dark:text-white">{formatAED(stats.grossSales)}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-slate-100 dark:border-slate-800">
+                <span className="text-slate-400">NET Daily Revenue:</span>
+                <span className="font-black text-emerald-600">{formatAED(stats.netSales)}</span>
+              </div>
+              <div className="flex justify-between items-center py-1">
+                <span className="text-slate-400">Average Check per Guest:</span>
+                <span className="font-bold text-slate-900 dark:text-white">{formatAED(stats.averageCheck)}</span>
               </div>
             </div>
           </div>
 
-          {/* Middle Column: Department Revenue Breakdown */}
-          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
-            <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-2">
-              <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Revenue mix</h4>
-              <TrendingUp className="w-4 h-4 text-emerald-500" />
-            </div>
-
+          {/* Section 2: Department Revenue Breakdown */}
+          <div className="space-y-3">
+            <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800 pb-2 flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-emerald-500" /> Revenue Mix
+            </h3>
             <div className="space-y-2.5 text-xs">
               {Object.entries(stats.departments).map(([name, amount]) => (
-                <div key={name} className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-1.5 last:border-0">
-                  <span className="text-slate-400">{name}</span>
-                  <span className="font-black text-slate-800 dark:text-slate-200">{formatAED(amount)}</span>
+                <div key={name} className="flex justify-between items-center py-1 border-b border-slate-100 dark:border-slate-800 last:border-0">
+                  <span className="text-slate-400">{name} Revenue</span>
+                  <span className="font-bold text-slate-800 dark:text-slate-200">{formatAED(amount)}</span>
                 </div>
               ))}
-              <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-1.5">
-                <span className="text-slate-400">Discounted Deductions:</span>
+              <div className="flex justify-between items-center py-1 border-b border-slate-100 dark:border-slate-800">
+                <span className="text-slate-400">Discounts Deducted:</span>
                 <span className="font-bold text-rose-500">-{formatAED(stats.totalDiscount)}</span>
               </div>
               <div className="flex justify-between items-center pt-2">
-                <span className="text-xs font-bold text-slate-900 dark:text-white">Total Revenue:</span>
-                <span className="text-sm font-black text-emerald-500">{formatAED(stats.netSales)}</span>
+                <span className="text-xs font-black text-slate-900 dark:text-white">Total NET Revenue:</span>
+                <span className="text-xs font-black text-emerald-600">{formatAED(stats.netSales)}</span>
               </div>
             </div>
           </div>
 
-          {/* Right Column: Payment Settlement Split */}
-          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
-            <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-2">
-              <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Payment Tally</h4>
-              <Landmark className="w-4 h-4 text-blue-500" />
-            </div>
-
-            <div className="space-y-2 text-xs overflow-y-auto max-h-[200px] custom-scrollbar">
+          {/* Section 3: Payment Settlement Tally */}
+          <div className="space-y-3">
+            <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800 pb-2 flex items-center gap-2">
+              <Landmark className="w-4 h-4 text-blue-500" /> Payment Settlements
+            </h3>
+            <div className="space-y-2 text-xs max-h-[220px] overflow-y-auto custom-scrollbar pr-1">
               {Object.entries(stats.payments).map(([name, val]) => (
-                <div key={name} className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-1 last:border-0">
+                <div key={name} className="flex justify-between items-center py-1 border-b border-slate-55 dark:border-slate-800/80 last:border-0">
                   <span className="text-slate-400 text-[10px]">{name}</span>
-                  <span className="font-black text-slate-800 dark:text-slate-200">{formatAED(val.amount)}</span>
+                  <span className="font-semibold text-slate-800 dark:text-slate-200">{formatAED(val.amount)}</span>
                 </div>
               ))}
               <div className="flex justify-between items-center pt-2 border-t border-slate-100 dark:border-slate-800">
@@ -362,70 +315,65 @@ const ReportsModule: React.FC<ReportsProps> = ({
           </div>
         </div>
 
-        {/* Operational Notes, Top Selling, and Large Expenses */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Notes & Special Events Comments */}
-          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4 lg:col-span-2">
-            <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-2">
-              <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Operations & Duty Notes</h4>
-              <PenTool className="w-4 h-4 text-amber-500" />
-            </div>
-
-            <div className="space-y-3">
+        {/* Notes, Comments & Top Selling Items */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pt-4 border-t border-slate-100 dark:border-slate-800">
+          
+          {/* Operations Notes Column */}
+          <div className="lg:col-span-2 space-y-4">
+            <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800 pb-2 flex items-center gap-2">
+              <PenTool className="w-4 h-4 text-amber-500" /> Duty Logs & Feedback
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Special Events / VIPs</label>
                 <textarea
                   value={specialEvents}
                   onChange={(e) => setSpecialEvents(e.target.value)}
-                  placeholder="Enter events or VIP notes..."
-                  className="w-full text-xs font-medium text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-950 p-2 rounded-xl border border-slate-200 dark:border-slate-800 outline-none focus:border-rose-600 transition-all h-16 resize-none"
+                  placeholder="Enter events/VIP notes..."
+                  className="w-full text-xs bg-slate-50 dark:bg-slate-950 p-2 rounded-xl border border-slate-200 dark:border-slate-800 outline-none focus:border-rose-600 transition-all h-20 resize-none"
                 />
               </div>
-
               <div>
                 <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Guest Complaints & Recovery</label>
                 <textarea
                   value={complaints}
                   onChange={(e) => setComplaints(e.target.value)}
-                  placeholder="Enter guest feedback and recovery solutions..."
-                  className="w-full text-xs font-medium text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-950 p-2 rounded-xl border border-slate-200 dark:border-slate-800 outline-none focus:border-rose-600 transition-all h-16 resize-none"
+                  placeholder="Enter feedback and action taken..."
+                  className="w-full text-xs bg-slate-50 dark:bg-slate-950 p-2 rounded-xl border border-slate-200 dark:border-slate-800 outline-none focus:border-rose-600 transition-all h-20 resize-none"
                 />
               </div>
-
-              <div>
-                <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Overall Day Comments</label>
+              <div className="md:col-span-2">
+                <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Overall Shift Comments</label>
                 <textarea
                   value={dayComments}
                   onChange={(e) => setDayComments(e.target.value)}
-                  placeholder="Summarize the shift flow (e.g. Target progress, flow of guests, etc.)..."
-                  className="w-full text-xs font-medium text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-950 p-2 rounded-xl border border-slate-200 dark:border-slate-800 outline-none focus:border-rose-600 transition-all h-20 resize-none"
+                  placeholder="Write a summary of today's operations..."
+                  className="w-full text-xs bg-slate-50 dark:bg-slate-950 p-2 rounded-xl border border-slate-200 dark:border-slate-800 outline-none focus:border-rose-600 transition-all h-20 resize-none"
                 />
               </div>
             </div>
           </div>
 
-          {/* Right section: Top Selling List and Tomorrow's bookings */}
+          {/* Right Column: Top Items & Tomorrow's Bookings */}
           <div className="space-y-4">
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
-              <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-2">
-                <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Top Selling Items</h4>
-                <Award className="w-4 h-4 text-amber-500" />
-              </div>
+            <div className="space-y-3">
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800 pb-2 flex items-center gap-2">
+                <Award className="w-4 h-4 text-amber-500" /> Top Selling Items
+              </h3>
               <div className="space-y-2 text-xs">
                 {stats.topItems.map((item, idx) => (
-                  <div key={idx} className="flex justify-between items-center border-b border-slate-50 dark:border-slate-800 pb-1.5 last:border-0">
+                  <div key={idx} className="flex justify-between items-center py-1 border-b border-slate-50 dark:border-slate-800 last:border-0">
                     <span className="text-slate-800 dark:text-slate-200 font-semibold">{item.name}</span>
-                    <span className="font-black text-slate-900 dark:text-white">{formatAED(item.gross)}</span>
+                    <span className="font-bold text-slate-900 dark:text-white">{formatAED(item.gross)}</span>
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
-              <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-2">
-                <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Tomorrow's Bookings</h4>
-                <Calendar className="w-4 h-4 text-rose-500" />
-              </div>
+            <div className="space-y-2">
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800 pb-2 flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-rose-500" /> Tomorrow's Bookings
+              </h3>
               <input
                 value={tomorrowBookings}
                 onChange={(e) => setTomorrowBookings(e.target.value)}
@@ -436,22 +384,21 @@ const ReportsModule: React.FC<ReportsProps> = ({
           </div>
         </div>
 
-        {/* Lower Section: Discount Ledger Audit */}
-        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4">
-          <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-2">
-            <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Discount Audit Page</h4>
-            <FileCheck className="w-4 h-4 text-emerald-500" />
-          </div>
+        {/* Consolidated Discount Page Table */}
+        <div className="pt-6 border-t border-slate-100 dark:border-slate-800 space-y-3">
+          <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800 pb-2 flex items-center gap-2">
+            <FileCheck className="w-4 h-4 text-emerald-500" /> Discount & Void Audit (Consolidated)
+          </h3>
 
           <div className="overflow-x-auto custom-scrollbar">
-            <table className="w-full text-xs text-left border-collapse">
-              <thead>
-                <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-400 uppercase tracking-widest text-[9px]">
-                  <th className="py-2.5 px-3">Receipt Check No.</th>
-                  <th className="py-2.5 px-3 text-center">Void</th>
-                  <th className="py-2.5 px-3 text-center">Comp</th>
-                  <th className="py-2.5 px-3 text-center">Discount</th>
-                  <th className="py-2.5 px-3">Remarks / Reason</th>
+            <table className="w-full text-xs text-left border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
+              <thead className="bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800">
+                <tr className="text-slate-500 uppercase tracking-widest text-[9px] font-black">
+                  <th className="py-2.5 px-4">Discount Name / Reason</th>
+                  <th className="py-2.5 px-4 text-center">Tx Count</th>
+                  <th className="py-2.5 px-4 text-center">Void Value</th>
+                  <th className="py-2.5 px-4 text-center">Comp Value</th>
+                  <th className="py-2.5 px-4 text-right">Discount Value</th>
                 </tr>
               </thead>
               <tbody>
@@ -461,34 +408,37 @@ const ReportsModule: React.FC<ReportsProps> = ({
                   </tr>
                 ) : (
                   stats.discountLedger.map((row, idx) => (
-                    <tr key={idx} className="border-b border-slate-50 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-900/50">
-                      <td className="py-2 px-3 font-bold text-slate-700 dark:text-slate-300">{row.checkNo}</td>
-                      <td className="py-2 px-3 text-center text-rose-500 font-semibold">{row.voidAmt > 0 ? formatAED(row.voidAmt) : "-"}</td>
-                      <td className="py-2 px-3 text-center text-rose-500 font-semibold">{row.compAmt > 0 ? formatAED(row.compAmt) : "-"}</td>
-                      <td className="py-2 px-3 text-center text-rose-600 font-black">{row.discountAmt > 0 ? formatAED(row.discountAmt) : "-"}</td>
-                      <td className="py-2 px-3 text-slate-600 dark:text-slate-400 font-medium">{row.remarks}</td>
+                    <tr key={idx} className="border-b border-slate-200 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-900/50 last:border-0">
+                      <td className="py-2.5 px-4 font-bold text-slate-800 dark:text-slate-200">{row.remarks}</td>
+                      <td className="py-2.5 px-4 text-center font-bold text-slate-650 dark:text-slate-400">{row.count}</td>
+                      <td className="py-2.5 px-4 text-center text-rose-500 font-semibold">{row.voidAmt > 0 ? formatAED(row.voidAmt) : "-"}</td>
+                      <td className="py-2.5 px-4 text-center text-rose-500 font-semibold">{row.compAmt > 0 ? formatAED(row.compAmt) : "-"}</td>
+                      <td className="py-2.5 px-4 text-right text-rose-600 font-black">{row.discountAmt > 0 ? formatAED(row.discountAmt) : "-"}</td>
                     </tr>
                   ))
                 )}
                 {stats.discountLedger.length > 0 && (
-                  <tr className="bg-slate-50 dark:bg-slate-950 font-black">
-                    <td className="py-3 px-3 uppercase text-[10px] text-slate-900 dark:text-white">Total</td>
-                    <td className="py-3 px-3 text-center text-rose-500">
+                  <tr className="bg-slate-50 dark:bg-slate-950 font-black border-t border-slate-200 dark:border-slate-800">
+                    <td className="py-3 px-4 uppercase text-[9px]">Total Summary</td>
+                    <td className="py-3 px-4 text-center text-slate-900 dark:text-white">
+                      {stats.discountLedger.reduce((acc, r) => acc + r.count, 0)}
+                    </td>
+                    <td className="py-3 px-4 text-center text-rose-500">
                       {formatAED(stats.discountLedger.reduce((acc, r) => acc + r.voidAmt, 0))}
                     </td>
-                    <td className="py-3 px-3 text-center text-rose-500">
+                    <td className="py-3 px-4 text-center text-rose-500">
                       {formatAED(stats.discountLedger.reduce((acc, r) => acc + r.compAmt, 0))}
                     </td>
-                    <td className="py-3 px-3 text-center text-rose-600">
+                    <td className="py-3 px-4 text-right text-rose-600">
                       {formatAED(stats.discountLedger.reduce((acc, r) => acc + r.discountAmt, 0))}
                     </td>
-                    <td className="py-3 px-3"></td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
         </div>
+
       </div>
     </div>
   );
