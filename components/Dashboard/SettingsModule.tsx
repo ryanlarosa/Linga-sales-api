@@ -24,7 +24,7 @@ interface SettingsModuleProps {
 }
 
 const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
-  const [tab, setTab] = useState<"STORES" | "USERS" | "AUTOMATION" | "MAILER" | "LOGS" | "CACHING" | "BRANDS">("STORES");
+  const [tab, setTab] = useState<"STORES" | "USERS" | "AUTOMATION" | "MAILER" | "LOGS" | "CACHING" | "BRANDS" | "SYNC">("STORES");
   const [cachingEnabled, setCachingEnabled] = useState(true);
   const [orderedBrands, setOrderedBrands] = useState<string[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
@@ -32,6 +32,9 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
   const [reportLogs, setReportLogs] = useState<ReportLog[]>([]);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
+  const [serviceAccountEmail, setServiceAccountEmail] = useState<string | null>(null);
+  const [syncingDrive, setSyncingDrive] = useState(false);
+  const [driveSyncMsg, setDriveSyncMsg] = useState("");
   
   // Caching Backfill States
   const [syncFromDate, setSyncFromDate] = useState("2026-06-01");
@@ -214,8 +217,53 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
     }
   };
 
+  const fetchServiceAccountEmail = async () => {
+    try {
+      const currentUserStr = localStorage.getItem("linga_analytics_user");
+      const currentUser = currentUserStr ? JSON.parse(currentUserStr) : null;
+      const response = await fetch("/api/v1/db/service-account-email", {
+        headers: {
+          "x-user-username": currentUser?.username || ""
+        }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setServiceAccountEmail(data.email);
+      }
+    } catch (e) {
+      console.error("Failed to load service account email:", e);
+    }
+  };
+
+  const handleDriveSync = async () => {
+    setSyncingDrive(true);
+    setDriveSyncMsg("Scanning and downloading monthly files from Google Drive...");
+    try {
+      const currentUserStr = localStorage.getItem("linga_analytics_user");
+      const currentUser = currentUserStr ? JSON.parse(currentUserStr) : null;
+      const response = await fetch("/api/v1/db/sync-historical-drive", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-username": currentUser?.username || ""
+        }
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setDriveSyncMsg(`Sync Completed Successfully! Processed ${data.filesProcessed} files. Added ${data.storesAdded} stores.`);
+      } else {
+        setDriveSyncMsg(`Sync Failed: ${data.error || "Unknown error occurred"}`);
+      }
+    } catch (err: any) {
+      setDriveSyncMsg(`Error: ${err.message || "Failed to trigger historical sync"}`);
+    } finally {
+      setSyncingDrive(false);
+    }
+  };
+
   useEffect(() => {
     fetchData();
+    fetchServiceAccountEmail();
   }, []);
 
   const handleStartSync = async () => {
@@ -559,6 +607,15 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
         >
           Brand Sequence
         </button>
+        <button
+          onClick={() => {
+            setTab("SYNC");
+            resetUserForm();
+          }}
+          className={`px-4 py-2 text-sm font-bold border-b-2 transition-all whitespace-nowrap ${tab === "SYNC" ? "border-rose-600 text-rose-600 dark:text-rose-400" : "text-slate-400"}`}
+        >
+          Google Drive Historical Import
+        </button>
       </div>
 
       {msg && (
@@ -567,7 +624,65 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
         </div>
       )}
 
-      {tab === "BRANDS" ? (
+      {tab === "SYNC" ? (
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 shadow-sm transition-all space-y-6 animate-fadeIn">
+          <div className="border-b border-slate-100 dark:border-slate-800 pb-6">
+            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">
+              Google Drive Historical Sync
+            </h3>
+            <p className="text-sm text-slate-400 mt-1">
+              Import and parse legacy monthly Excel spreadsheets directly from Google Drive.
+            </p>
+          </div>
+
+          <div className="space-y-6 max-w-2xl">
+            {serviceAccountEmail ? (
+              <div className="space-y-4">
+                <div className="p-4 bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 rounded-xl space-y-2">
+                  <p className="text-xs font-bold uppercase tracking-wider">Step 1: Share Folder on Google Drive</p>
+                  <p className="text-xs leading-relaxed text-slate-500">
+                    Share your main root folder (e.g. <code>Eatx Analytics Data</code> or <code>DATA</code>) on Google Drive with this service account email. Give it <strong>Viewer</strong> or <strong>Editor</strong> access:
+                  </p>
+                  <div className="flex gap-2 items-center bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-3 py-2 rounded-lg mt-2 justify-between">
+                    <span className="text-xs font-black text-slate-850 dark:text-slate-105 select-all">{serviceAccountEmail}</span>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(serviceAccountEmail);
+                        alert("Service Account email copied!");
+                      }}
+                      className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 text-slate-650 dark:text-slate-300 rounded text-[10px] font-black hover:bg-slate-250 cursor-pointer"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl space-y-3">
+                  <p className="text-xs font-bold uppercase tracking-wider">Step 2: Sync Historical Sheets</p>
+                  <p className="text-xs text-slate-500">
+                    Once shared, click the button below to recursively scan all year folders (e.g., 2024, 2025, 2026), parse the logs, and cache the aggregated statistics in the database.
+                  </p>
+                  <button
+                    onClick={handleDriveSync}
+                    disabled={syncingDrive}
+                    className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-md shadow-rose-600/10 disabled:opacity-50 transition-all cursor-pointer"
+                  >
+                    {syncingDrive ? "Processing Spreadsheets..." : "Start Google Drive Sync"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="text-xs text-slate-400 italic">Authenticating with Google Drive...</div>
+            )}
+
+            {driveSyncMsg && (
+              <div className="p-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold text-slate-800 dark:text-slate-200 animate-fadeIn">
+                {driveSyncMsg}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : tab === "BRANDS" ? (
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 shadow-sm transition-all space-y-6 animate-fadeIn">
           <div className="border-b border-slate-100 dark:border-slate-800 pb-6">
             <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">

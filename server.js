@@ -774,6 +774,22 @@ async function fetchStoreTrendSummaryBackend(storeId, dates) {
       const dateStrIso = `${yyyy}-${mm}-${dd}`;
 
       try {
+        // Check historical_daily_stats first
+        try {
+          const histRef = doc(db, 'historical_daily_stats', `${storeId}_${dateStrIso}`);
+          const histSnap = await getDoc(histRef);
+          if (histSnap.exists()) {
+            const histData = histSnap.data();
+            results[dateKey] = {
+              covers: histData.covers || 0,
+              netSales: histData.netSales || 0
+            };
+            return;
+          }
+        } catch (e) {
+          console.error(`[Historical Stats Load Error] Failed to read stats for ${storeId} on ${dateStrIso}:`, e.message);
+        }
+
         let salesData;
         let summaryData;
 
@@ -2815,6 +2831,212 @@ app.get('/api/v1/db/logs', checkAuth, async (req, res) => {
         logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
         res.json({ success: true, logs });
     } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// --- Google Drive Historical Sync Endpoints ---
+app.get('/api/v1/db/service-account-email', checkAuth, async (req, res) => {
+    try {
+        const mailerSnap = await getDoc(doc(db, "configs", "mailer_settings"));
+        const mailerSettings = mailerSnap.exists() ? mailerSnap.data() : null;
+        const authJson = mailerSettings?.googleServiceAccountKey || process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+        
+        if (!authJson) {
+            return res.json({ success: true, email: null });
+        }
+        const credentials = JSON.parse(authJson);
+        res.json({ success: true, email: credentials.client_email || null });
+    } catch (e) {
+        res.status(500).json({ error: "Failed to load service account email." });
+    }
+});
+
+app.post('/api/v1/db/sync-historical-drive', checkAuth, async (req, res) => {
+    try {
+        const mailerSnap = await getDoc(doc(db, "configs", "mailer_settings"));
+        const mailerSettings = mailerSnap.exists() ? mailerSnap.data() : null;
+        const authJson = mailerSettings?.googleServiceAccountKey || process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+
+        if (!authJson) {
+            return res.status(400).json({ error: "Google Service Account key is not configured on the server." });
+        }
+
+        const credentials = JSON.parse(authJson);
+        const auth = new google.auth.GoogleAuth({
+            credentials,
+            scopes: ['https://www.googleapis.com/auth/drive.readonly']
+        });
+        const drive = google.drive({ version: 'v3', auth });
+
+        // Search recursively for spreadsheets containing 'Linga_Analytics'
+        const listResponse = await drive.files.list({
+            q: "name contains 'Linga_Analytics' and mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' and trashed = false",
+            fields: 'files(id, name)',
+            pageSize: 1000
+        });
+
+        const files = listResponse.data.files || [];
+        if (files.length === 0) {
+            return res.json({ success: true, filesProcessed: 0, storesAdded: 0, message: "No legacy Excel reports found in Google Drive." });
+        }
+
+        console.log(`[Historical Sync] Found ${files.length} Excel files to process.`);
+        let processedCount = 0;
+        let storesAddedCount = 0;
+
+        function parseExcelDate(cellValue) {
+            if (!cellValue) return null;
+            if (cellValue instanceof Date) {
+                return cellValue.toISOString().split('T')[0];
+            }
+            const str = String(cellValue).trim();
+            const ddmmyyyy = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+            if (ddmmyyyy) {
+                return `${ddmmyyyy[3]}-${ddmmyyyy[2].padStart(2, '0')}-${ddmmyyyy[1].padStart(2, '0')}`;
+            }
+            const yyyymmdd = str.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+            if (yyyymmdd) {
+                return `${yyyymmdd[1]}-${yyyymmdd[2].padStart(2, '0')}-${yyyymmdd[3].padStart(2, '0')}`;
+            }
+            const parsed = new Date(str);
+            if (!isNaN(parsed.getTime())) {
+                return parsed.toISOString().split('T')[0];
+            }
+            return null;
+        }
+
+        for (const file of files) {
+            // Match YYYY-MM Linga_Analytics_[Store Name].xlsx
+            const match = file.name.match(/\d{4}-\d{2}\s+Linga_Analytics_(.+)\.xlsx/i);
+            if (!match) continue;
+            const storeName = match[1].trim();
+
+            // Match against constants or seed automatically
+            let store = DEFAULT_STORES.find(s => s.name.toLowerCase() === storeName.toLowerCase());
+            if (!store) {
+                const generatedId = crypto.createHash('md5').update(storeName).digest('hex').substring(0, 24);
+                store = { id: generatedId, name: storeName, active: true };
+            }
+
+            // Verify store exists in Firestore, otherwise save it
+            const storeRef = doc(db, "stores", store.id);
+            const storeSnap = await getDoc(storeRef);
+            if (!storeSnap.exists()) {
+                await setDoc(storeRef, store);
+                storesAddedCount++;
+                console.log(`[Historical Sync] Automatically seeded missing store: ${storeName}`);
+            }
+
+            // Download file
+            const mediaResponse = await drive.files.get({
+                fileId: file.id,
+                alt: 'media'
+            }, { responseType: 'arraybuffer' });
+
+            const workbook = new ExcelJS.Workbook();
+            await workbook.xlsx.load(Buffer.from(mediaResponse.data));
+
+            const dailyData = {};
+
+            // 1. Parse SalesData Sheet
+            const salesSheet = workbook.getWorksheet("SalesData");
+            if (salesSheet) {
+                salesSheet.eachRow((row, rowNumber) => {
+                    if (rowNumber === 1) return; // Header
+                    // Columns: G (7) is Net Sales, K (11) is Guest Count, L (12) is Date
+                    const dateVal = row.getCell(12).value;
+                    const netVal = Number(row.getCell(7).value) || 0;
+                    const coversVal = Number(row.getCell(11).value) || 0;
+
+                    const dateStr = parseExcelDate(dateVal);
+                    if (dateStr) {
+                        if (!dailyData[dateStr]) {
+                            dailyData[dateStr] = {
+                                date: dateStr,
+                                storeId: store.id,
+                                netSales: 0,
+                                covers: 0,
+                                checks: 0,
+                                foodSales: 0,
+                                bevSales: 0,
+                                retailSales: 0,
+                                discountSales: 0,
+                                topItems: {}
+                            };
+                        }
+                        dailyData[dateStr].netSales += netVal;
+                        dailyData[dateStr].covers += coversVal;
+                        dailyData[dateStr].checks += 1;
+                    }
+                });
+            }
+
+            // 2. Parse MenuItemDetailed Sheet
+            const menuSheet = workbook.getWorksheet("MenuItemDetailed");
+            if (menuSheet) {
+                menuSheet.eachRow((row, rowNumber) => {
+                    if (rowNumber === 1) return;
+                    // Order_Date: B (2), Department: E (5), CategoryName: F (6), Total_Amount: K (11), Discount: L (12), Is_Void: N (14), Menu_Item: I (9)
+                    const rawDate = row.getCell(2).value;
+                    const dateStr = parseExcelDate(rawDate);
+                    if (!dateStr || !dailyData[dateStr]) return;
+
+                    const dept = String(row.getCell(5).value || "").toUpperCase();
+                    const cat = String(row.getCell(6).value || "").toUpperCase();
+                    const totalAmt = Number(row.getCell(11).value) || 0;
+                    const discAmt = Number(row.getCell(12).value) || 0;
+                    const netAmt = totalAmt - discAmt;
+                    const itemName = String(row.getCell(9).value || "");
+
+                    if (dept.includes("FOOD") || cat.includes("FOOD")) {
+                        dailyData[dateStr].foodSales += netAmt;
+                    } else if (dept.includes("BEVERAGE") || cat.includes("BEVERAGE") || cat.includes("DRINK")) {
+                        dailyData[dateStr].bevSales += netAmt;
+                    } else {
+                        dailyData[dateStr].retailSales += netAmt;
+                    }
+
+                    const isVoid = String(row.getCell(14).value || "").toUpperCase() === "Y" || String(row.getCell(14).value || "").toUpperCase() === "TRUE";
+                    if (!isVoid && itemName) {
+                        dailyData[dateStr].topItems[itemName] = (dailyData[dateStr].topItems[itemName] || 0) + totalAmt;
+                    }
+                });
+            }
+
+            // 3. Save aggregated statistics to Firestore collection 'historical_daily_stats'
+            for (const [datePart, dayStats] of Object.entries(dailyData)) {
+                const topItemsSorted = Object.entries(dayStats.topItems)
+                    .map(([name, gross]) => ({ name, gross }))
+                    .sort((a, b) => b.gross - a.gross)
+                    .slice(0, 5);
+
+                const finalRecord = {
+                    date: dayStats.date,
+                    storeId: dayStats.storeId,
+                    netSales: dayStats.netSales,
+                    covers: dayStats.covers,
+                    checks: dayStats.checks,
+                    departments: {
+                        Food: dayStats.foodSales,
+                        Beverage: dayStats.bevSales,
+                        "Encounter + Retail": dayStats.retailSales
+                    },
+                    topItems: topItemsSorted,
+                    timestamp: new Date().toISOString()
+                };
+
+                const statDocId = `${dayStats.storeId}_${dayStats.date}`;
+                await setDoc(doc(db, "historical_daily_stats", statDocId), finalRecord);
+            }
+
+            processedCount++;
+            console.log(`[Historical Sync] Successfully processed Excel sheet: ${file.name}`);
+        }
+
+        res.json({ success: true, filesProcessed: processedCount, storesAdded: storesAddedCount });
+    } catch (error) {
+        console.error("[Historical Sync Error]:", error);
         res.status(500).json({ error: error.message });
     }
 });
