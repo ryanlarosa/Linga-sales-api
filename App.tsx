@@ -16,14 +16,26 @@ const ProtectedRoute = ({ isAllowed, children }: PropsWithChildren<ProtectedRout
 };
 
 const App: React.FC = () => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(() => {
+    const saved = localStorage.getItem("linga_analytics_user");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error("Failed to parse saved user session:", e);
+      }
+    }
+    return null;
+  });
 
   const handleLogin = (userData: User) => {
     setUser(userData);
+    localStorage.setItem("linga_analytics_user", JSON.stringify(userData));
   };
 
   const handleLogout = () => {
     setUser(null);
+    localStorage.removeItem("linga_analytics_user");
   };
 
   return (

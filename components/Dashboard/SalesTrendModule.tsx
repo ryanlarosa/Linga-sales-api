@@ -178,10 +178,13 @@ const SalesTrendModule: React.FC<SalesTrendModuleProps> = ({ storeList, theme, a
     setSendingReport(true);
     setSendResult(null);
     try {
+      const currentUserStr = localStorage.getItem("linga_analytics_user");
+      const currentUser = currentUserStr ? JSON.parse(currentUserStr) : null;
       const response = await fetch('/api/v1/reports/email-sales-tracker', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'x-user-username': currentUser?.username || ''
         },
         body: JSON.stringify({
           selectedDate,

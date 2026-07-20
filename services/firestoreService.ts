@@ -9,6 +9,13 @@ const isMissingDbError = (error: any) => {
            (error?.message && error.message.includes('database (default) does not exist'));
 };
 
+const hashPassword = async (password: string): Promise<string> => {
+  const msgBuffer = new TextEncoder().encode(password);
+  const hashBuffer = await window.crypto.subtle.digest("SHA-256", msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+};
+
 // --- DB INITIALIZATION ---
 
 export const initializeDatabase = async () => {
@@ -68,7 +75,11 @@ export const getUsers = async (): Promise<User[]> => {
 
 export const addUser = async (user: User): Promise<void> => {
     try {
-        await setDoc(doc(db, "users", user.username), user);
+        const userToSave = { ...user };
+        if (userToSave.password) {
+            userToSave.password = await hashPassword(userToSave.password);
+        }
+        await setDoc(doc(db, "users", user.username), userToSave);
     } catch (error) {
         console.error("Error adding user:", error);
         throw error;
@@ -77,8 +88,12 @@ export const addUser = async (user: User): Promise<void> => {
 
 export const updateUser = async (username: string, updates: Partial<User>): Promise<void> => {
     try {
+        const updatesToSave = { ...updates };
+        if (updatesToSave.password) {
+            updatesToSave.password = await hashPassword(updatesToSave.password);
+        }
         const userRef = doc(db, "users", username);
-        await updateDoc(userRef, updates);
+        await updateDoc(userRef, updatesToSave);
     } catch (error) {
         console.error("Error updating user:", error);
         throw error;
@@ -113,18 +128,30 @@ export const loginUser = async (username: string, password: string): Promise<Use
       return null;
     }
 
+    const hashedPassword = await hashPassword(password);
     let foundUser: User | null = null;
-    querySnapshot.forEach((doc: QueryDocumentSnapshot<DocumentData>) => {
-      const userData = doc.data();
-      if (userData.password === password) {
+    
+    for (const d of querySnapshot.docs) {
+      const userData = d.data();
+      if (userData.password === password || userData.password === hashedPassword) {
+        // Auto-upgrade if it's plaintext
+        if (userData.password === password) {
+          try {
+            await updateDoc(doc(db, "users", username), { password: hashedPassword });
+            console.log(`[Security] Auto-upgraded password hash for user ${username}`);
+          } catch (e: any) {
+            console.error("Failed to auto-upgrade legacy plaintext password:", e.message);
+          }
+        }
         foundUser = {
           username: userData.username,
           role: userData.role as 'superuser' | 'admin' | 'user',
           name: userData.name,
           allowedStores: userData.allowedStores
         };
+        break;
       }
-    });
+    }
 
     return foundUser;
   } catch (error) {

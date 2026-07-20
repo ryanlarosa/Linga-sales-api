@@ -663,6 +663,29 @@ const firebaseConfig = {
 const firebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const db = initializeFirestore(firebaseApp, { localCache: memoryLocalCache() }); // Force trigger Vercel redeploy
 
+// --- Auth Verification Middleware ---
+async function checkAuth(req, res, next) {
+    const username = req.headers['x-user-username'];
+    if (!username) {
+        return res.status(401).json({ error: "Authentication required" });
+    }
+    try {
+        const userDoc = await getDoc(doc(db, "users", username));
+        if (!userDoc.exists()) {
+            return res.status(403).json({ error: "User not found" });
+        }
+        const role = userDoc.data().role;
+        if (role !== 'superuser' && role !== 'admin') {
+            return res.status(403).json({ error: "Access denied. Admins only." });
+        }
+        req.user = userDoc.data();
+        next();
+    } catch (e) {
+        console.error("[Auth Middleware Error] Failed to verify user:", e.message);
+        return res.status(500).json({ error: "Authentication verification failed" });
+    }
+}
+
 const DEFAULT_STORES = [
   { name: "Common Grounds DIFC", id: "5e4be85b7237b70001de9106" },
   { name: "Common Grounds DMCC", id: "5e4be880716db00001c7b6f1" },
@@ -2078,7 +2101,7 @@ async function writeReportLogBackend({ type, reportType, reportDate, status, rec
 }
 
 // --- Email and Drive Report Route (Manual UI Trigger) ---
-app.post('/api/v1/reports/email-cover-tracker', async (req, res) => {
+app.post('/api/v1/reports/email-cover-tracker', checkAuth, async (req, res) => {
     try {
         const { selectedDate, trendData, totals } = req.body;
         if (!selectedDate || !trendData || !totals) {
@@ -2161,7 +2184,7 @@ app.post('/api/v1/reports/email-cover-tracker', async (req, res) => {
     }
 });
 
-app.post('/api/v1/reports/email-sales-tracker', async (req, res) => {
+app.post('/api/v1/reports/email-sales-tracker', checkAuth, async (req, res) => {
     try {
         const { selectedDate, trendData, totals } = req.body;
         if (!selectedDate || !trendData || !totals) {
@@ -2605,7 +2628,7 @@ app.get('/api/v1/cron/daily-cover-tracker', async (req, res) => {
 });
 
 // --- Test Automation Trigger Route (Authorized UI Sessions) ---
-app.post('/api/v1/cron/test-automation', async (req, res) => {
+app.post('/api/v1/cron/test-automation', checkAuth, async (req, res) => {
     try {
         // Forces execution bypassing Dubai time check
         const summary = await runDailyAutomation(true);

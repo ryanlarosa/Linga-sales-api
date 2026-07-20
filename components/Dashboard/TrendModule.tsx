@@ -160,10 +160,13 @@ const TrendModule: React.FC<TrendModuleProps> = ({ storeList, theme, anchorDate 
     setSendingReport(true);
     setSendResult(null);
     try {
+      const currentUserStr = localStorage.getItem("linga_analytics_user");
+      const currentUser = currentUserStr ? JSON.parse(currentUserStr) : null;
       const response = await fetch('/api/v1/reports/email-cover-tracker', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'x-user-username': currentUser?.username || ''
         },
         body: JSON.stringify({
           selectedDate,

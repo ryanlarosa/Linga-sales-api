@@ -437,7 +437,10 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
     setMsg("");
     try {
       const response = await fetch("/api/v1/cron/test-automation", {
-        method: "POST"
+        method: "POST",
+        headers: {
+          "x-user-username": currentUser.username
+        }
       });
       const data = await response.json();
       if (response.ok && data.success) {

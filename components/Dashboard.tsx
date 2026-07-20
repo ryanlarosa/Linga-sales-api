@@ -23,6 +23,7 @@ type ViewMode = "OVERVIEW" | "REPORTS" | "TRENDS" | "SALES_TRENDS" | "SETTINGS";
 const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [view, setView] = useState<ViewMode>("OVERVIEW");
   const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const [storeList, setStoreList] = useState<Store[]>([]);
   const [selectedStore, setSelectedStore] = useState<string>("");
@@ -133,7 +134,28 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
 
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-slate-950 font-sans text-slate-900 dark:text-slate-100 overflow-hidden transition-colors duration-300">
+      {/* Desktop Sidebar */}
       <Sidebar user={user} view={view} setView={setView} onLogout={onLogout} />
+
+      {/* Mobile Drawer Overlay */}
+      {mobileMenuOpen && (
+        <div 
+          onClick={() => setMobileMenuOpen(false)}
+          className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-40 md:hidden animate-fadeIn"
+        />
+      )}
+      
+      {/* Mobile Drawer Sidebar */}
+      <div className={`fixed top-0 bottom-0 left-0 w-64 bg-white dark:bg-slate-900 z-50 md:hidden transition-transform duration-300 transform border-r border-slate-200 dark:border-slate-800 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <Sidebar 
+          user={user} 
+          view={view} 
+          setView={(v) => { setView(v); setMobileMenuOpen(false); }} 
+          onLogout={onLogout} 
+          isMobileDrawer={true}
+          onClose={() => setMobileMenuOpen(false)}
+        />
+      </div>
 
       <main className="flex-1 overflow-x-hidden overflow-y-auto">
         <DashboardHeader
@@ -144,6 +166,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
           desiredLiveMode={desiredLiveMode}
           setDesiredLiveMode={setDesiredLiveMode}
           onRefresh={loadData}
+          onMenuClick={() => setMobileMenuOpen(true)}
         />
 
         {view !== "SETTINGS" && view !== "TRENDS" && view !== "SALES_TRENDS" && (
