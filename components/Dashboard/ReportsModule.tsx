@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { FetchedData } from "../../types";
 import { 
-  TrendingUp, Users, Award, Calendar, Landmark, FileCheck, ClipboardList, PenTool
+  TrendingUp, Award, Calendar, Landmark, FileCheck, ClipboardList, PenTool, Copy, Check
 } from 'lucide-react';
 
 import { parseCurrency, formatAED } from "./Reports/ReportUtils";
@@ -18,8 +18,8 @@ const ReportsModule: React.FC<ReportsProps> = ({
   fromDate,
   selectedStoreName,
 }) => {
-  const [modName, setModName] = useState("RETCHEL");
-  const [chefName, setChefName] = useState("JAMES KAKADU");
+  const [modName, setModName] = useState("");
+  const [chefName, setChefName] = useState("");
   const [reservations, setReservations] = useState(0);
   const [noShows, setNoShows] = useState(0);
   const [walkIns, setWalkIns] = useState(0);
@@ -30,6 +30,7 @@ const ReportsModule: React.FC<ReportsProps> = ({
   const [complaints, setComplaints] = useState("");
   const [dayComments, setDayComments] = useState("");
   const [tomorrowBookings, setTomorrowBookings] = useState("");
+  const [copied, setCopied] = useState(false);
 
   // --- STATS DERIVATION ---
   const stats = useMemo(() => {
@@ -190,6 +191,61 @@ const ReportsModule: React.FC<ReportsProps> = ({
     };
   }, [data]);
 
+  const handleCopyToClipboard = () => {
+    if (!stats) return;
+    
+    let text = `${selectedStoreName} - EOD RECAP (${fromDate})\n\n`;
+    text += `MOD: ${modName || "N/A"} | Chef: ${chefName || "N/A"}\n`;
+    text += `Total Covers: ${stats.totalCovers}\n`;
+    text += `Reservations: ${reservations} | Walk-Ins: ${walkIns}\n`;
+    text += `Day Grand Sales: ${formatAED(stats.grossSales)}\n`;
+    text += `NET Daily Revenue: ${formatAED(stats.netSales)}\n`;
+    text += `Average Check per Guest: ${formatAED(stats.averageCheck)}\n\n`;
+    
+    text += `REVENUE MIX:\n`;
+    Object.entries(stats.departments).forEach(([name, val]) => {
+      if (val > 0) {
+        text += `- ${name}: ${formatAED(val)}\n`;
+      }
+    });
+    if (stats.totalDiscount > 0) {
+      text += `- Discounts: -${formatAED(stats.totalDiscount)}\n`;
+    }
+    text += `- Total NET Revenue: ${formatAED(stats.netSales)}\n\n`;
+    
+    text += `PAYMENTS TALLY:\n`;
+    Object.entries(stats.payments).forEach(([name, val]) => {
+      if (val.amount > 0) {
+        text += `- ${name}: ${formatAED(val.amount)}\n`;
+      }
+    });
+    text += `- TOTAL PAYMENTS: ${formatAED(stats.totalPayments || stats.grossSales)}\n\n`;
+    
+    text += `TOP SELLING ITEMS:\n`;
+    stats.topItems.forEach((item, idx) => {
+      text += `${idx + 1}. ${item.name} (${formatAED(item.gross)})\n`;
+    });
+    text += `\n`;
+    
+    if (specialEvents) {
+      text += `SPECIAL EVENTS / VIPS:\n${specialEvents}\n\n`;
+    }
+    if (complaints) {
+      text += `GUEST COMPLAINTS & RECOVERY:\n${complaints}\n\n`;
+    }
+    if (dayComments) {
+      text += `OVERALL DAY COMMENTS:\n${dayComments}\n\n`;
+    }
+    if (tomorrowBookings) {
+      text += `TOMORROW'S BOOKINGS:\n${tomorrowBookings}\n`;
+    }
+
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 3000);
+    });
+  };
+
   if (!data || !stats) {
     return (
       <div className="flex flex-col items-center justify-center text-slate-400 py-20">
@@ -207,6 +263,13 @@ const ReportsModule: React.FC<ReportsProps> = ({
           <h2 className="text-lg font-black dark:text-white uppercase tracking-wider">Daily Operations & DSR Recap</h2>
           <p className="text-xs text-slate-500">{selectedStoreName} — {fromDate}</p>
         </div>
+        <button
+          onClick={handleCopyToClipboard}
+          className="flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-md shadow-rose-600/10 transition-all cursor-pointer"
+        >
+          {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+          {copied ? "Copied to Clipboard!" : "Copy for Email"}
+        </button>
       </div>
 
       <div className="space-y-6 bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors duration-300">
@@ -226,18 +289,20 @@ const ReportsModule: React.FC<ReportsProps> = ({
                   <input 
                     value={modName} 
                     onChange={(e) => setModName(e.target.value)}
+                    placeholder="Enter MOD name"
                     className="w-20 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-1.5 py-0.5 rounded text-[10px] font-bold outline-none text-slate-900 dark:text-white"
                   />
                   <input 
                     value={chefName} 
                     onChange={(e) => setChefName(e.target.value)}
+                    placeholder="Enter Chef name"
                     className="w-20 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-1.5 py-0.5 rounded text-[10px] font-bold outline-none text-slate-900 dark:text-white"
                   />
                 </div>
               </div>
               <div className="flex justify-between items-center py-1 border-b border-slate-100 dark:border-slate-800">
                 <span className="text-slate-400">Total Covers:</span>
-                <span className="font-bold text-slate-850 dark:text-slate-105">{stats.totalCovers}</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200">{stats.totalCovers}</span>
               </div>
               <div className="flex justify-between items-center py-1 border-b border-slate-100 dark:border-slate-800">
                 <span className="text-slate-400">Reservations:</span>
@@ -295,18 +360,20 @@ const ReportsModule: React.FC<ReportsProps> = ({
             </div>
           </div>
 
-          {/* Section 3: Payment Settlement Tally */}
+          {/* Section 3: Payment Settlement Tally (Excludes 0 amounts) */}
           <div className="space-y-3">
             <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800 pb-2 flex items-center gap-2">
               <Landmark className="w-4 h-4 text-blue-500" /> Payment Settlements
             </h3>
             <div className="space-y-2 text-xs max-h-[220px] overflow-y-auto custom-scrollbar pr-1">
-              {Object.entries(stats.payments).map(([name, val]) => (
-                <div key={name} className="flex justify-between items-center py-1 border-b border-slate-55 dark:border-slate-800/80 last:border-0">
-                  <span className="text-slate-400 text-[10px]">{name}</span>
-                  <span className="font-semibold text-slate-800 dark:text-slate-200">{formatAED(val.amount)}</span>
-                </div>
-              ))}
+              {Object.entries(stats.payments)
+                .filter(([_, val]) => val.amount > 0)
+                .map(([name, val]) => (
+                  <div key={name} className="flex justify-between items-center py-1 border-b border-slate-55 dark:border-slate-800/80 last:border-0">
+                    <span className="text-slate-400 text-[10px]">{name}</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">{formatAED(val.amount)}</span>
+                  </div>
+                ))}
               <div className="flex justify-between items-center pt-2 border-t border-slate-100 dark:border-slate-800">
                 <span className="text-xs font-bold text-slate-900 dark:text-white">Total Payments:</span>
                 <span className="font-black text-slate-800 dark:text-slate-200">{formatAED(stats.totalPayments || stats.grossSales)}</span>
@@ -329,7 +396,7 @@ const ReportsModule: React.FC<ReportsProps> = ({
                 <textarea
                   value={specialEvents}
                   onChange={(e) => setSpecialEvents(e.target.value)}
-                  placeholder="Enter events/VIP notes..."
+                  placeholder="Enter events or VIP notes..."
                   className="w-full text-xs bg-slate-50 dark:bg-slate-950 p-2 rounded-xl border border-slate-200 dark:border-slate-800 outline-none focus:border-rose-600 transition-all h-20 resize-none"
                 />
               </div>
@@ -338,7 +405,7 @@ const ReportsModule: React.FC<ReportsProps> = ({
                 <textarea
                   value={complaints}
                   onChange={(e) => setComplaints(e.target.value)}
-                  placeholder="Enter feedback and action taken..."
+                  placeholder="Enter guest feedback and recovery actions..."
                   className="w-full text-xs bg-slate-50 dark:bg-slate-950 p-2 rounded-xl border border-slate-200 dark:border-slate-800 outline-none focus:border-rose-600 transition-all h-20 resize-none"
                 />
               </div>
@@ -362,7 +429,7 @@ const ReportsModule: React.FC<ReportsProps> = ({
               </h3>
               <div className="space-y-2 text-xs">
                 {stats.topItems.map((item, idx) => (
-                  <div key={idx} className="flex justify-between items-center py-1 border-b border-slate-50 dark:border-slate-800 last:border-0">
+                  <div key={idx} className="flex justify-between items-center py-1 border-b border-slate-55 dark:border-slate-800 last:border-0">
                     <span className="text-slate-800 dark:text-slate-200 font-semibold">{item.name}</span>
                     <span className="font-bold text-slate-900 dark:text-white">{formatAED(item.gross)}</span>
                   </div>
