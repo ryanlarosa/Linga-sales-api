@@ -1742,7 +1742,7 @@ async function uploadToGoogleDrive(fileBuffer, fileName, mailerSettings = null, 
   }
 }
 
-async function buildHtmlReport(trendData, totals, selectedDate, anchorDates, reportType) {
+async function buildHtmlReport(trendData, totals, selectedDate, anchorDates, reportType, interpolatedBody = null) {
   if (!trendData || !totals || !anchorDates) return "";
 
   const formatDate = (d) => {
@@ -1863,11 +1863,15 @@ async function buildHtmlReport(trendData, totals, selectedDate, anchorDates, rep
     return `<td style="padding: 4px 8px; border: 1px solid #CBD5E1; text-align: center; color: #64748B;">na</td>`;
   }
 
+  let bodyHtml = `<p style="margin: 0 0 10px 0;">Good morning,</p><p style="margin: 0 0 10px 0;">PFB ${reportType} report for ${selectedDate} (${dayOfWeek}).</p>`;
+  if (interpolatedBody) {
+    bodyHtml = interpolatedBody.split('\n').map(line => `<p style="margin: 0 0 10px 0;">${line}</p>`).join('');
+  }
+
   // Start HTML construction
   let html = `
   <div style="font-family: Arial, sans-serif; font-size: 14px; color: #334155; max-width: 800px; line-height: 1.5;">
-    <p>Good morning,</p>
-    <p>PFB ${reportType} report for ${selectedDate} (${dayOfWeek}).</p>
+    ${bodyHtml}
     
     <table style="border-collapse: collapse; width: 100%; max-width: 800px; font-family: Arial, sans-serif; font-size: 12px; margin-top: 15px; margin-bottom: 20px;">
       <thead>
@@ -1969,11 +1973,13 @@ async function buildHtmlReport(trendData, totals, selectedDate, anchorDates, rep
     }
   });
 
+  const footerHtml = interpolatedBody ? "" : "<p>Thanks and Regards,</p>";
+
   html += `
       </tbody>
     </table>
     
-    <p>Thanks and Regards,</p>
+    ${footerHtml}
   </div>
   `;
 
@@ -1986,6 +1992,7 @@ async function sendEmailReport(fileBuffer, fileName, selectedDate, mailerSetting
   const user = mailerSettings?.smtpUser || process.env.SMTP_USER;
   const pass = mailerSettings?.smtpPass || process.env.SMTP_PASS;
   const recipients = mailerSettings?.reportRecipients || process.env.REPORT_RECIPIENTS;
+  const senderName = mailerSettings?.senderName || "Linga Reports";
 
   if (!host || !user || !pass || !recipients) {
     console.warn("SMTP configuration or REPORT_RECIPIENTS is missing. Skipping email send.");
@@ -2019,14 +2026,14 @@ async function sendEmailReport(fileBuffer, fileName, selectedDate, mailerSetting
   let htmlContent = null;
   if (trendData && totals && anchorDates) {
     try {
-      htmlContent = await buildHtmlReport(trendData, totals, selectedDate, anchorDates, reportType);
+      htmlContent = await buildHtmlReport(trendData, totals, selectedDate, anchorDates, reportType, interpolatedBody);
     } catch (err) {
       console.error("Failed to build HTML body for email:", err.message);
     }
   }
 
   const mailOptions = {
-    from: `"Linga Reports" <${user}>`,
+    from: `"${senderName}" <${user}>`,
     to: recipients,
     subject: interpolatedSubject,
     text: interpolatedBody,

@@ -132,6 +132,7 @@ export interface MailerSettings {
   googleServiceAccountKey?: string;
   emailSubjectTemplate?: string;
   emailBodyTemplate?: string;
+  senderName?: string;
 }
 
 export interface ReportLog {

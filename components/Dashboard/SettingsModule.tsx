@@ -1154,6 +1154,17 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                     className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
                   />
                 </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
+                    Email Sender Display Name
+                  </label>
+                  <input
+                    value={mailerSettings.senderName || ""}
+                    onChange={(e) => setMailerSettings({ ...mailerSettings, senderName: e.target.value })}
+                    placeholder="e.g. Linga Reports"
+                    className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
+                  />
+                </div>
                 <div className="grid grid-cols-3 gap-4">
                   <div className="col-span-2 space-y-1">
                     <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
