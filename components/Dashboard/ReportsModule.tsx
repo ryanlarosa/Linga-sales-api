@@ -89,7 +89,7 @@ const ReportsModule: React.FC<ReportsProps> = ({
 
     const totalPayments = Object.values(payments).reduce((acc, p) => acc + p.amount, 0);
 
-    // Revenue breakdown
+    // Revenue breakdown (Net Amount)
     const departments: Record<string, number> = {
       Food: 0,
       Beverage: 0,
@@ -98,18 +98,21 @@ const ReportsModule: React.FC<ReportsProps> = ({
     };
 
     data.detailedMenu.forEach((m) => {
-      const val = parseCurrency(m.totalGrossAmountStr);
+      const gross = parseCurrency(m.totalGrossAmountStr);
+      const discount = m.totalDiscountAmountStr ? parseCurrency(m.totalDiscountAmountStr) : 0;
+      const net = gross - discount;
+
       const category = m.categoryName || "";
       const deptName = m.departmentName || "";
       
       if (deptName.toUpperCase().includes("FOOD") || category.toUpperCase().includes("FOOD")) {
-        departments["Food"] += val;
+        departments["Food"] += net;
       } else if (deptName.toUpperCase().includes("BEVERAGE") || category.toUpperCase().includes("BEVERAGE") || category.toUpperCase().includes("DRINK")) {
-        departments["Beverage"] += val;
+        departments["Beverage"] += net;
       } else if (deptName.toUpperCase().includes("RETAIL") || category.toUpperCase().includes("RETAIL")) {
-        departments["Encounter + Retail"] += val;
+        departments["Encounter + Retail"] += net;
       } else {
-        departments["Encounter + Retail"] += val;
+        departments["Encounter + Retail"] += net;
       }
     });
 
@@ -202,14 +205,14 @@ const ReportsModule: React.FC<ReportsProps> = ({
     text += `NET Daily Revenue: ${formatAED(stats.netSales)}\n`;
     text += `Average Check per Guest: ${formatAED(stats.averageCheck)}\n\n`;
     
-    text += `REVENUE MIX:\n`;
+    text += `REVENUE MIX (NET):\n`;
     Object.entries(stats.departments).forEach(([name, val]) => {
       if (val > 0) {
         text += `- ${name}: ${formatAED(val)}\n`;
       }
     });
     if (stats.totalDiscount > 0) {
-      text += `- Discounts: -${formatAED(stats.totalDiscount)}\n`;
+      text += `- Discount Ref: ${formatAED(stats.totalDiscount)}\n`;
     }
     text += `- Total NET Revenue: ${formatAED(stats.netSales)}\n\n`;
     
@@ -337,10 +340,10 @@ const ReportsModule: React.FC<ReportsProps> = ({
             </div>
           </div>
 
-          {/* Section 2: Department Revenue Breakdown */}
+          {/* Section 2: Department Revenue Breakdown (Net Values) */}
           <div className="space-y-3">
             <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800 pb-2 flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-emerald-500" /> Revenue Mix
+              <TrendingUp className="w-4 h-4 text-emerald-500" /> Revenue Mix (Net)
             </h3>
             <div className="space-y-2.5 text-xs">
               {Object.entries(stats.departments).map(([name, amount]) => (
@@ -350,17 +353,17 @@ const ReportsModule: React.FC<ReportsProps> = ({
                 </div>
               ))}
               <div className="flex justify-between items-center py-1 border-b border-slate-100 dark:border-slate-800">
-                <span className="text-slate-400">Discounts Deducted:</span>
-                <span className="font-bold text-rose-500">-{formatAED(stats.totalDiscount)}</span>
+                <span className="text-slate-400">Discount Reference:</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200">{formatAED(stats.totalDiscount)}</span>
               </div>
               <div className="flex justify-between items-center pt-2">
-                <span className="text-xs font-black text-slate-900 dark:text-white">Total NET Revenue:</span>
+                <span className="text-xs font-black text-slate-900 dark:text-white">Total Net Revenue:</span>
                 <span className="text-xs font-black text-emerald-600">{formatAED(stats.netSales)}</span>
               </div>
             </div>
           </div>
 
-          {/* Section 3: Payment Settlement Tally (Excludes 0 amounts) */}
+          {/* Section 3: Payment Settlement Tally */}
           <div className="space-y-3">
             <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800 pb-2 flex items-center gap-2">
               <Landmark className="w-4 h-4 text-blue-500" /> Payment Settlements
