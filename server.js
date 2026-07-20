@@ -2060,13 +2060,7 @@ async function sendEmailReport(fileBuffer, fileName, selectedDate, mailerSetting
     from: `"${senderName}" <${user}>`,
     to: recipients,
     subject: interpolatedSubject,
-    text: interpolatedBody,
-    attachments: [
-      {
-        filename: fileName,
-        content: fileBuffer
-      }
-    ]
+    text: interpolatedBody
   };
 
   if (htmlContent) {
