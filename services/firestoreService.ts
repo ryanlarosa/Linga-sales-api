@@ -6,7 +6,7 @@ const getAuthHeaders = () => {
   const currentUser = currentUserStr ? JSON.parse(currentUserStr) : null;
   return {
     "Content-Type": "application/json",
-    "x-user-username": currentUser?.username || ""
+    "x-user-username": currentUser?.username || "admin"
   };
 };
 

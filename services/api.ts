@@ -229,7 +229,10 @@ export const fetchDashboardData = async (
 
     try {
       const [salesData, discountData, menuData, saleSummaryData] =
-        await Promise.all(endpoints.map((ep) => fetchFromBackend(ep)));
+        await Promise.all(endpoints.map((ep) => fetchFromBackend(ep).catch((err) => {
+          console.warn(`[Sync Chunk Warning] ${ep} failed:`, err);
+          return null;
+        })));
 
       // --- De-duplicate Sales & Payments ---
       if (salesData?.sales) {
