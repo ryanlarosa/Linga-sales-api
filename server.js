@@ -701,11 +701,17 @@ async function getActiveStores() {
     const stores = [];
     snapshot.forEach(doc => {
       const data = doc.data();
+      const storeId = data.id || doc.id;
       if (data.active !== false) {
-        stores.push({ id: data.id, name: data.name, brand: data.brand || "", active: data.active !== false });
+        stores.push({ 
+          id: storeId, 
+          name: data.name || doc.id, 
+          brand: data.brand || "", 
+          active: data.active !== false 
+        });
       }
     });
-    return stores;
+    return stores.length > 0 ? stores : DEFAULT_STORES.filter(s => s.active !== false);
   } catch (err) {
     console.error("Failed to fetch stores from Firestore on backend, using fallback:", err);
     return DEFAULT_STORES;
@@ -2716,8 +2722,10 @@ app.get('/api/v1/db/stores', checkAuth, async (req, res) => {
 app.post('/api/v1/db/stores', checkAuth, async (req, res) => {
     try {
         const store = req.body;
-        await setDoc(doc(db, "stores", store.id), store);
-        res.json({ success: true });
+        const storeId = store.id || crypto.createHash('md5').update(store.name || "Store").digest('hex').substring(0, 24);
+        const storeObj = { ...store, id: storeId, active: store.active !== false };
+        await setDoc(doc(db, "stores", storeId), storeObj, { merge: true });
+        res.json({ success: true, store: storeObj });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
