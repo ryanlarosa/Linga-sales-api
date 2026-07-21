@@ -694,6 +694,28 @@ const DEFAULT_STORES = [
   { name: "The Sum of Us", id: "5e4be949e8ce4c00019fe377" }
 ];
 
+async function getAllStores() {
+  try {
+    const snapshot = await getDocs(collection(db, 'stores'));
+    if (snapshot.empty) return DEFAULT_STORES;
+    const stores = [];
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      const storeId = data.id || doc.id;
+      stores.push({ 
+        id: storeId, 
+        name: data.name || doc.id, 
+        brand: data.brand || "", 
+        active: data.active !== false 
+      });
+    });
+    return stores.length > 0 ? stores : DEFAULT_STORES;
+  } catch (err) {
+    console.error("Failed to fetch all stores from Firestore on backend, using fallback:", err);
+    return DEFAULT_STORES;
+  }
+}
+
 async function getActiveStores() {
   try {
     const snapshot = await getDocs(collection(db, 'stores'));
@@ -2712,7 +2734,7 @@ app.post('/api/v1/db/login', async (req, res) => {
 // 2. Stores operations
 app.get('/api/v1/db/stores', checkAuth, async (req, res) => {
     try {
-        const stores = await getActiveStores();
+        const stores = await getAllStores();
         res.json({ success: true, stores });
     } catch (error) {
         res.status(500).json({ error: error.message });
