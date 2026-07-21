@@ -346,9 +346,10 @@ app.get('/api/v1/lingapos/store/:storeId/layout', async (req, res) => {
         const { storeId } = req.params;
         const url = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/layout`;
         const response = await callExternalApi(url);
-        res.json(response.data);
+        res.json(response.data || { floors: [] });
     } catch (error) {
-        res.status(error.status || 500).json(error.data || { error: error.message });
+        console.warn(`[layout warn] Linga API error for ${req.params.storeId}:`, error.message);
+        res.json({ floors: [] });
     }
 });
 
@@ -357,9 +358,10 @@ app.get('/api/v1/lingapos/store/:storeId/users', async (req, res) => {
         const { storeId } = req.params;
         const url = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/users`;
         const response = await callExternalApi(url);
-        res.json(response.data);
+        res.json(response.data || []);
     } catch (error) {
-        res.status(error.status || 500).json(error.data || { error: error.message });
+        console.warn(`[users warn] Linga API error for ${req.params.storeId}:`, error.message);
+        res.json([]);
     }
 });
 
