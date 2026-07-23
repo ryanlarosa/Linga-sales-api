@@ -754,6 +754,216 @@ async function getAutomationSettingsBackend() {
   }
 }
 
+async function saveHybridDailyRecord(storeId, dateStrIso, salesData, summaryData) {
+  try {
+    let netSalesTotal = 0;
+    let grossSalesTotal = 0;
+    let coversTotal = 0;
+    let checksTotal = 0;
+    let foodSales = 0;
+    let bevSales = 0;
+    let retailSales = 0;
+    let discountsTotal = 0;
+    const paymentMap = {};
+    const discountsMap = {};
+    const itemMap = {};
+    const voidReasonsMap = {};
+    let voidAmountTotal = 0;
+    let voidCountTotal = 0;
+
+    const ticketsArray = [];
+
+    if (salesData && salesData.sales) {
+      salesData.sales.forEach(sale => {
+        checksTotal += 1;
+        coversTotal += Number(sale.guestCount) || 0;
+        
+        const summary = Array.isArray(summaryData) ? summaryData.find(s => s.id === sale.id) : null;
+        const parseFloatVal = (v) => {
+          if (typeof v === 'number') return v;
+          if (!v) return 0;
+          const clean = String(v).replace(/[$,\s]/g, '');
+          const num = parseFloat(clean);
+          return isNaN(num) ? 0 : num;
+        };
+
+        const netAmt = parseFloatVal(summary?.netSales || sale.netSalesStr);
+        const grossAmt = parseFloatVal(sale.grossReceiptStr || summary?.totalGrossAmount);
+        const discAmt = parseFloatVal(summary?.discounts || 0);
+
+        netSalesTotal += netAmt;
+        grossSalesTotal += grossAmt;
+        discountsTotal += discAmt;
+
+        // Extract payment breakdown
+        if (sale.payments) {
+          sale.payments.forEach(p => {
+            const method = p.paymentMethod || "Other";
+            const amt = parseFloatVal(p.authorizedAmountStr);
+            paymentMap[method] = (paymentMap[method] || 0) + amt;
+          });
+        }
+
+        // Build ticket order items
+        const ticketItems = [];
+        if (sale.orders) {
+          sale.orders.forEach(order => {
+            const itemName = order.menuItemName || order.itemName || "Item";
+            const qty = Number(order.quantity) || 1;
+            const price = parseFloatVal(order.priceStr || order.grossAmountStr);
+            const isVoid = String(order.isVoid || "").toUpperCase() === "Y" || String(order.isVoid || "").toUpperCase() === "TRUE" || order.isVoid === true;
+            const voidReason = order.voidReason || order.reason || "";
+            const voidBy = order.voidBy || order.employeeName || "";
+
+            if (isVoid) {
+              voidCountTotal += qty;
+              voidAmountTotal += price;
+              if (voidReason) {
+                voidReasonsMap[voidReason] = voidReasonsMap[voidReason] || { count: 0, amount: 0 };
+                voidReasonsMap[voidReason].count += qty;
+                voidReasonsMap[voidReason].amount += price;
+              }
+            } else {
+              itemMap[itemName] = itemMap[itemName] || { quantity: 0, gross: 0 };
+              itemMap[itemName].quantity += qty;
+              itemMap[itemName].gross += price;
+
+              const dept = String(order.departmentName || order.department || "").toUpperCase();
+              const cat = String(order.categoryName || order.category || "").toUpperCase();
+              if (dept.includes("FOOD") || cat.includes("FOOD")) {
+                foodSales += price;
+              } else if (dept.includes("BEVERAGE") || cat.includes("BEVERAGE") || cat.includes("DRINK")) {
+                bevSales += price;
+              } else {
+                retailSales += price;
+              }
+            }
+
+            ticketItems.push({
+              name: itemName,
+              qty,
+              price,
+              isVoid,
+              voidReason,
+              voidBy
+            });
+          });
+        }
+
+        // Ticket discounts
+        const ticketDiscounts = [];
+        if (sale.discounts) {
+          sale.discounts.forEach(d => {
+            const dName = d.discountName || "Discount";
+            const dAmt = parseFloatVal(d.discountAmtStr || d.discountAmt);
+            discountsMap[dName] = discountsMap[dName] || { count: 0, amount: 0 };
+            discountsMap[dName].count += 1;
+            discountsMap[dName].amount += dAmt;
+
+            ticketDiscounts.push({
+              discountName: dName,
+              discountAmt: dAmt,
+              appliedBy: d.employeeName || ""
+            });
+          });
+        }
+
+        // Format finalSaleDate (DD-MM-YYYY)
+        const saleDateObj = sale.startDate ? new Date(sale.startDate) : new Date(dateStrIso);
+        const day = String(saleDateObj.getUTCDate()).padStart(2, "0");
+        const month = String(saleDateObj.getUTCMonth() + 1).padStart(2, "0");
+        const year = saleDateObj.getUTCFullYear();
+        const finalSaleDate = `${day}-${month}-${year}`;
+
+        ticketsArray.push({
+          ticketNo: sale.ticketNo || "",
+          customerName: sale.customerName || "Walk In",
+          serverName: sale.employeeName || sale.employee || "Unknown",
+          closedBy: sale.saleCloseEmployeeName || sale.saleCloseEmployee || "Unknown",
+          floorNo: summary?.floorNo || "Unknown",
+          tableNo: summary?.tableNo || "Unknown",
+          guestCount: Number(sale.guestCount) || 0,
+          openTime: sale.saleOpenTime || "",
+          closeTime: sale.saleCloseTime || "",
+          finalSaleDate,
+          netSales: netAmt,
+          totalTax: parseFloatVal(summary?.totalTaxAmount),
+          discountsTotal: discAmt,
+          grossReceipt: grossAmt,
+          items: ticketItems,
+          discounts: ticketDiscounts,
+          payments: sale.payments || []
+        });
+      });
+    }
+
+    // Process discount & void breakdowns
+    const discountsBreakdown = Object.entries(discountsMap).map(([name, data]) => ({
+      name,
+      count: data.count,
+      amount: Math.round(data.amount * 100) / 100
+    }));
+
+    const voidReasonsBreakdown = Object.entries(voidReasonsMap).map(([reason, data]) => ({
+      reason,
+      count: data.count,
+      amount: Math.round(data.amount * 100) / 100
+    }));
+
+    const topItemsSorted = Object.entries(itemMap)
+      .map(([name, val]) => ({ name, quantity: val.quantity, gross: Math.round(val.gross * 100) / 100 }))
+      .sort((a, b) => b.gross - a.gross)
+      .slice(0, 10);
+
+    const avgCheck = checksTotal > 0 ? Math.round((netSalesTotal / checksTotal) * 100) / 100 : 0;
+
+    // LAYER 1 DOCUMENT
+    const layer1Record = {
+      storeId,
+      date: dateStrIso,
+      netSales: Math.round(netSalesTotal * 100) / 100,
+      grossSales: Math.round(grossSalesTotal * 100) / 100,
+      covers: coversTotal,
+      checks: checksTotal,
+      avgCheck,
+      departments: {
+        Food: Math.round(foodSales * 100) / 100,
+        Beverage: Math.round(bevSales * 100) / 100,
+        "Encounter + Retail": Math.round(retailSales * 100) / 100
+      },
+      payments: paymentMap,
+      discountsTotal: Math.round(discountsTotal * 100) / 100,
+      discountsBreakdown,
+      voidsSummary: {
+        totalAmount: Math.round(voidAmountTotal * 100) / 100,
+        totalCount: voidCountTotal,
+        reasons: voidReasonsBreakdown
+      },
+      topItems: topItemsSorted,
+      updatedAt: new Date().toISOString()
+    };
+
+    // LAYER 2 DOCUMENT
+    const layer2Record = {
+      storeId,
+      date: dateStrIso,
+      ticketsCount: ticketsArray.length,
+      tickets: ticketsArray,
+      updatedAt: new Date().toISOString()
+    };
+
+    const docId = `${storeId}_${dateStrIso}`;
+    await Promise.all([
+      setDoc(doc(db, "historical_daily_stats", docId), layer1Record, { merge: true }),
+      setDoc(doc(db, "daily_tickets", docId), layer2Record, { merge: true })
+    ]);
+
+    console.log(`[Hybrid Save Success] Saved Layer 1 & Layer 2 for ${storeId} on ${dateStrIso}`);
+  } catch (err) {
+    console.error(`[Hybrid Save Error] Failed to save record for ${storeId} on ${dateStrIso}:`, err.message);
+  }
+}
+
 async function fetchStoreTrendSummaryBackend(storeId, dates) {
   const results = {};
 
@@ -820,67 +1030,21 @@ async function fetchStoreTrendSummaryBackend(storeId, dates) {
         let salesData;
         let summaryData;
 
-        if (useCache) {
-          const salesDocRef = doc(db, 'sales_cache', `${storeId}_${dateStrIso}`);
-          const summaryDocRef = doc(db, 'sale_summaries_cache', `${storeId}_${dateStrIso}`);
+        // Query LINGAPOS directly
+        console.log(`[Backend Sync] Fetching getsale & summary for ${storeId} on ${dateStrIso}...`);
+        const salesUrl = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/getsale`;
+        const summaryUrl = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/saleSummaryReport`;
 
-          // Try load from cache first
-          const [snapSales, snapSummary] = await Promise.all([
-            getDoc(salesDocRef),
-            getDoc(summaryDocRef)
-          ]);
+        const [salesRes, summaryRes] = await Promise.all([
+          callExternalApi(salesUrl, { fromDate: formatted, toDate: formatted }).catch(() => ({ data: { sales: [] } })),
+          callExternalApi(summaryUrl, { dateOption: 'DR', fromDate: formatted, toDate: formatted }).catch(() => ({ data: [] }))
+        ]);
+        salesData = salesRes.data;
+        summaryData = summaryRes.data;
 
-          if (snapSales.exists()) {
-            console.log(`[Backend Cache Hit] getsale for ${storeId} on ${dateStrIso}`);
-            salesData = snapSales.data().data;
-          } else {
-            console.log(`[Backend Cache Miss] Fetching getsale for ${storeId} on ${dateStrIso}...`);
-            const salesUrl = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/getsale`;
-            const salesRes = await callExternalApi(salesUrl, { fromDate: formatted, toDate: formatted });
-            salesData = salesRes.data;
-            try {
-              await setDoc(salesDocRef, {
-                storeId,
-                date: dateStrIso,
-                data: salesData,
-                createdAt: new Date().toISOString()
-              });
-            } catch (writeErr) {
-              console.error(`[Backend Cache Write Error] Failed to write sales cache for ${storeId} on ${dateStrIso}:`, writeErr.message);
-            }
-          }
-
-          if (snapSummary.exists()) {
-            console.log(`[Backend Cache Hit] saleSummaryReport for ${storeId} on ${dateStrIso}`);
-            summaryData = snapSummary.data().data;
-          } else {
-            console.log(`[Backend Cache Miss] Fetching saleSummaryReport for ${storeId} on ${dateStrIso}...`);
-            const summaryUrl = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/saleSummaryReport`;
-            const summaryRes = await callExternalApi(summaryUrl, { dateOption: 'DR', fromDate: formatted, toDate: formatted });
-            summaryData = summaryRes.data;
-            try {
-              await setDoc(summaryDocRef, {
-                storeId,
-                date: dateStrIso,
-                data: summaryData,
-                createdAt: new Date().toISOString()
-              });
-            } catch (writeErr) {
-              console.error(`[Backend Cache Write Error] Failed to write summary cache for ${storeId} on ${dateStrIso}:`, writeErr.message);
-            }
-          }
-        } else {
-          // Cache bypassed - query LINGAPOS directly
-          console.log(`[Backend Cache Bypass] Fetching getsale & summary for ${storeId} on ${dateStrIso}...`);
-          const salesUrl = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/getsale`;
-          const summaryUrl = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/saleSummaryReport`;
-
-          const [salesRes, summaryRes] = await Promise.all([
-            callExternalApi(salesUrl, { fromDate: formatted, toDate: formatted }),
-            callExternalApi(summaryUrl, { dateOption: 'DR', fromDate: formatted, toDate: formatted })
-          ]);
-          salesData = salesRes.data;
-          summaryData = summaryRes.data;
+        // Auto-save into Layer 1 and Layer 2 hybrid collections!
+        if (salesData && salesData.sales) {
+          saveHybridDailyRecord(storeId, dateStrIso, salesData, summaryData);
         }
 
         let dailyCovers = 0;
@@ -2738,6 +2902,53 @@ app.get('/api/v1/db/stores', checkAuth, async (req, res) => {
         res.json({ success: true, stores });
     } catch (error) {
         res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/v1/db/daily-summary', checkAuth, async (req, res) => {
+    try {
+        const { storeId, fromDate, toDate } = req.query;
+        if (!storeId || !fromDate || !toDate) {
+            return res.status(400).json({ error: "storeId, fromDate, and toDate are required." });
+        }
+
+        const snapshot = await getDocs(
+            query(
+                collection(db, 'historical_daily_stats'),
+                where('storeId', '==', String(storeId)),
+                where('date', '>=', String(fromDate)),
+                where('date', '<=', String(toDate))
+            )
+        );
+
+        const records = [];
+        snapshot.forEach(doc => records.push(doc.data()));
+
+        res.json({ success: true, records });
+    } catch (err) {
+        console.error("[daily-summary Error]:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/v1/db/daily-tickets', checkAuth, async (req, res) => {
+    try {
+        const { storeId, date } = req.query;
+        if (!storeId || !date) {
+            return res.status(400).json({ error: "storeId and date are required." });
+        }
+
+        const docId = `${storeId}_${date}`;
+        const snap = await getDoc(doc(db, 'daily_tickets', docId));
+
+        if (snap.exists()) {
+            return res.json({ success: true, data: snap.data() });
+        } else {
+            return res.status(404).json({ success: false, message: "No raw tickets cached for this store and date." });
+        }
+    } catch (err) {
+        console.error("[daily-tickets Error]:", err);
+        res.status(500).json({ error: err.message });
     }
 });
 

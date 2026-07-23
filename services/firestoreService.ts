@@ -212,3 +212,25 @@ export const updateCachingSettings = async (enabled: boolean): Promise<void> => 
     body: JSON.stringify({ enabled })
   });
 };
+
+// --- HYBRID DATA LAYER ACCESS ---
+
+export const getDailySummary = async (storeId: string, fromDate: string, toDate: string): Promise<any[]> => {
+  try {
+    const res = await fetchFromDb(`/api/v1/db/daily-summary?storeId=${encodeURIComponent(storeId)}&fromDate=${encodeURIComponent(fromDate)}&toDate=${encodeURIComponent(toDate)}`);
+    return res.records || [];
+  } catch (error) {
+    console.error("Error fetching daily summary from DB:", error);
+    return [];
+  }
+};
+
+export const getDailyRawTickets = async (storeId: string, date: string): Promise<any | null> => {
+  try {
+    const res = await fetchFromDb(`/api/v1/db/daily-tickets?storeId=${encodeURIComponent(storeId)}&date=${encodeURIComponent(date)}`);
+    return res.data || null;
+  } catch (error) {
+    console.error("Error fetching daily raw tickets from DB:", error);
+    return null;
+  }
+};
