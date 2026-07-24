@@ -213,16 +213,48 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
     };
   });
 
-  // Also create a map for saleDetails by composite key for MenuItem matching
+  const normalizeDateStr = (str: string): string => {
+    if (!str) return "";
+    const strClean = String(str).trim();
+    const parsed = new Date(strClean);
+    if (!isNaN(parsed.getTime())) {
+      const yyyy = parsed.getFullYear();
+      const mm = String(parsed.getMonth() + 1).padStart(2, "0");
+      const dd = String(parsed.getDate()).padStart(2, "0");
+      return `${yyyy}-${mm}-${dd}`;
+    }
+    const parts = strClean.split("-");
+    if (parts.length === 3) {
+      const day = parts[0].padStart(2, "0");
+      const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+      const mIdx = months.findIndex(m => m === parts[1].toUpperCase());
+      if (mIdx > -1) {
+        const month = String(mIdx + 1).padStart(2, "0");
+        const year = parts[2];
+        return `${year}-${month}-${day}`;
+      }
+    }
+    return strClean.split("T")[0];
+  };
+
+  // Create maps for saleDetails by composite key & by check ID for MenuItem matching
   const saleDetailsByTicketAndDate = new Map<
     string,
     (typeof data.saleDetails)[0]
   >();
+  const saleDetailsByTicket = new Map<
+    string,
+    (typeof data.saleDetails)[0]
+  >();
+
   data.saleDetails.forEach((detail) => {
-    if (detail.check && detail.date) {
-      const detailDatePart = detail.date.split("T")[0];
-      const compositeKey = `${detail.check}_${detailDatePart}`;
-      saleDetailsByTicketAndDate.set(compositeKey, detail);
+    if (detail.check) {
+      saleDetailsByTicket.set(detail.check, detail);
+      if (detail.date) {
+        const detailDatePart = normalizeDateStr(detail.date);
+        const compositeKey = `${detail.check}_${detailDatePart}`;
+        saleDetailsByTicketAndDate.set(compositeKey, detail);
+      }
     }
   });
 
@@ -238,17 +270,19 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
     const voidBy =
       data.users.find((u) => u.id === item.voidByEmployee)?.name || "Unknown";
 
-    // Match discount by composite key (ticketNo + date) for accuracy
+    // Match discount by composite key (ticketNo + date) with ticket ID fallback
     let discountName = "N/A";
-    if (item.saleId && item.saleDate) {
-      const menuItemDatePart = item.saleDate.split("T")[0];
-      const compositeKey = `${item.saleId}_${menuItemDatePart}`;
-      const matchedDetail = saleDetailsByTicketAndDate.get(compositeKey);
-      if (
-        matchedDetail &&
-        matchedDetail.discountName &&
-        item.totalDiscountAmountStr !== "0.00"
-      ) {
+    if (item.saleId) {
+      let matchedDetail: (typeof data.saleDetails)[0] | undefined;
+      if (item.saleDate) {
+        const menuItemDatePart = normalizeDateStr(item.saleDate);
+        const compositeKey = `${item.saleId}_${menuItemDatePart}`;
+        matchedDetail = saleDetailsByTicketAndDate.get(compositeKey);
+      }
+      if (!matchedDetail) {
+        matchedDetail = saleDetailsByTicket.get(item.saleId);
+      }
+      if (matchedDetail && matchedDetail.discountName) {
         discountName = matchedDetail.discountName;
       }
     }
@@ -267,7 +301,9 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
       Total_Amount: parseNum(item.totalGrossAmountStr),
       Discount: parseNum(item.totalDiscountAmountStr),
       DiscountName: discountName,
-      Is_Void: (String(item.isVoid).toUpperCase() === "Y" || String(item.isVoid).toUpperCase() === "TRUE"),
+      Is_Void:
+        String(item.isVoid).toUpperCase() === "Y" ||
+        String(item.isVoid).toUpperCase() === "TRUE",
       Void_Reason: item.voidError,
       VoidedBy: voidBy,
     };
@@ -469,7 +505,7 @@ export const exportTrendToExcel = async (
     const lastWk = row.lastWk || 0;
     const lastMth = row.lastMth || 0;
     const lastYr = row.lastYr || 0;
-    
+
     return {
       ...row,
       thisWk,
@@ -477,9 +513,9 @@ export const exportTrendToExcel = async (
       lastMth,
       lastYr,
       brand: getStoreBrand(row.storeName, row.brand),
-      varLw: (thisWk === 0 || lastWk === 0) ? "na" : (thisWk - lastWk),
-      varLm: (thisWk === 0 || lastMth === 0) ? "na" : (thisWk - lastMth),
-      varLy: (thisWk === 0 || lastYr === 0) ? "na" : (thisWk - lastYr),
+      varLw: thisWk === 0 || lastWk === 0 ? "na" : thisWk - lastWk,
+      varLm: thisWk === 0 || lastMth === 0 ? "na" : thisWk - lastMth,
+      varLy: thisWk === 0 || lastYr === 0 ? "na" : thisWk - lastYr,
     };
   });
 
@@ -490,13 +526,22 @@ export const exportTrendToExcel = async (
   const totalLastYr = parsedRows.reduce((sum, r) => sum + r.lastYr, 0);
 
   // Calculate Company Level variances (summing store variances that are not "na")
-  const lwVars = parsedRows.filter(r => r.varLw !== "na").map(r => r.varLw as number);
-  const lmVars = parsedRows.filter(r => r.varLm !== "na").map(r => r.varLm as number);
-  const lyVars = parsedRows.filter(r => r.varLy !== "na").map(r => r.varLy as number);
+  const lwVars = parsedRows
+    .filter((r) => r.varLw !== "na")
+    .map((r) => r.varLw as number);
+  const lmVars = parsedRows
+    .filter((r) => r.varLm !== "na")
+    .map((r) => r.varLm as number);
+  const lyVars = parsedRows
+    .filter((r) => r.varLy !== "na")
+    .map((r) => r.varLy as number);
 
-  const totalVarLw = lwVars.length > 0 ? lwVars.reduce((sum, v) => sum + v, 0) : "na";
-  const totalVarLm = lmVars.length > 0 ? lmVars.reduce((sum, v) => sum + v, 0) : "na";
-  const totalVarLy = lyVars.length > 0 ? lyVars.reduce((sum, v) => sum + v, 0) : "na";
+  const totalVarLw =
+    lwVars.length > 0 ? lwVars.reduce((sum, v) => sum + v, 0) : "na";
+  const totalVarLm =
+    lmVars.length > 0 ? lmVars.reduce((sum, v) => sum + v, 0) : "na";
+  const totalVarLy =
+    lyVars.length > 0 ? lyVars.reduce((sum, v) => sum + v, 0) : "na";
 
   // Add Totals (Company level) first, styled beautifully
   const totalRow = worksheet.addRow([
@@ -614,13 +659,22 @@ export const exportTrendToExcel = async (
     const brandLastMth = brandStores.reduce((sum, r) => sum + r.lastMth, 0);
     const brandLastYr = brandStores.reduce((sum, r) => sum + r.lastYr, 0);
 
-    const bLwVars = brandStores.filter(r => r.varLw !== "na").map(r => r.varLw as number);
-    const bLmVars = brandStores.filter(r => r.varLm !== "na").map(r => r.varLm as number);
-    const bLyVars = brandStores.filter(r => r.varLy !== "na").map(r => r.varLy as number);
+    const bLwVars = brandStores
+      .filter((r) => r.varLw !== "na")
+      .map((r) => r.varLw as number);
+    const bLmVars = brandStores
+      .filter((r) => r.varLm !== "na")
+      .map((r) => r.varLm as number);
+    const bLyVars = brandStores
+      .filter((r) => r.varLy !== "na")
+      .map((r) => r.varLy as number);
 
-    const brandVarLw = bLwVars.length > 0 ? bLwVars.reduce((sum, v) => sum + v, 0) : "na";
-    const brandVarLm = bLmVars.length > 0 ? bLmVars.reduce((sum, v) => sum + v, 0) : "na";
-    const brandVarLy = bLyVars.length > 0 ? bLyVars.reduce((sum, v) => sum + v, 0) : "na";
+    const brandVarLw =
+      bLwVars.length > 0 ? bLwVars.reduce((sum, v) => sum + v, 0) : "na";
+    const brandVarLm =
+      bLmVars.length > 0 ? bLmVars.reduce((sum, v) => sum + v, 0) : "na";
+    const brandVarLy =
+      bLyVars.length > 0 ? bLyVars.reduce((sum, v) => sum + v, 0) : "na";
 
     const hasMultiple = brandStores.length > 1;
 
