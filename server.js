@@ -2568,7 +2568,7 @@ async function fetchStoreSalesBackend(storeId, dates) {
 }
 
 // --- Scheduled Cron Job Route ---
-async function runDailyAutomation(isForced = false) {
+async function runDailyAutomation(isManualTest = false) {
     const resultsSummary = {
         message: "Scheduled Daily automation run completed.",
         timeChecked: new Date().toISOString(),
@@ -2587,7 +2587,7 @@ async function runDailyAutomation(isForced = false) {
     }
 
     // 4. Check time match (Dubai Time GST / UTC+4)
-    if (!isForced) {
+    if (!isManualTest) {
         const [targetHour, targetMinute] = (settings.fetchTime || "08:00").split(':').map(Number);
         
         const dubaiTimeStr = new Date().toLocaleString("en-US", { timeZone: "Asia/Dubai" });
@@ -2652,30 +2652,30 @@ async function runDailyAutomation(isForced = false) {
     // -- Covers Tracker execution --
     if (reportTypes.includes("Covers")) {
         console.log(`[Cron] Executing Covers Report for date ${selectedDate}...`);
-        const trendData = [];
         const totals = { thisWk: 0, lastWk: 0, lastMth: 0, lastYr: 0 };
 
-        for (let i = 0; i < filteredStores.length; i++) {
-            const store = filteredStores[i];
-            console.log(`[Cron-Covers] Fetching data for ${store.name}...`);
-            const summary = await fetchStoreTrendSummaryBackend(store.id, anchorDates);
-            
-            const storeData = {
-                storeId: store.id,
-                storeName: store.name,
-                brand: store.brand,
-                thisWk: summary[formatDateString(anchorDates[0])]?.covers || 0,
-                lastWk: summary[formatDateString(anchorDates[1])]?.covers || 0,
-                lastMth: summary[formatDateString(anchorDates[2])]?.covers || 0,
-                lastYr: summary[formatDateString(anchorDates[3])]?.covers || 0,
-            };
+        const trendData = await Promise.all(
+            filteredStores.map(async (store) => {
+                console.log(`[Cron-Covers] Fetching data for ${store.name}...`);
+                const summary = await fetchStoreTrendSummaryBackend(store.id, anchorDates);
+                return {
+                    storeId: store.id,
+                    storeName: store.name,
+                    brand: store.brand,
+                    thisWk: summary[formatDateString(anchorDates[0])]?.covers || 0,
+                    lastWk: summary[formatDateString(anchorDates[1])]?.covers || 0,
+                    lastMth: summary[formatDateString(anchorDates[2])]?.covers || 0,
+                    lastYr: summary[formatDateString(anchorDates[3])]?.covers || 0,
+                };
+            })
+        );
 
-            trendData.push(storeData);
+        trendData.forEach(storeData => {
             totals.thisWk += storeData.thisWk;
             totals.lastWk += storeData.lastWk;
             totals.lastMth += storeData.lastMth;
             totals.lastYr += storeData.lastYr;
-        }
+        });
 
         const excelBuffer = await generateExcelBuffer(trendData, totals, selectedDate, anchorDates);
         const fileName = `Consolidated_Cover_Report_${selectedDate}.xlsx`;
@@ -2733,7 +2733,7 @@ async function runDailyAutomation(isForced = false) {
         const trendData = await Promise.all(
             filteredStores.map(async (store) => {
                 console.log(`[Cron-Sales] Fetching data for ${store.name}...`);
-                const salesSummary = await fetchStoreSalesTrendSummaryBackend(store.id, anchorDates);
+                const salesSummary = await fetchStoreTrendSummaryBackend(store.id, anchorDates);
                 
                 try {
                     const discounts = await fetchStoreDiscountsBackend(store.id, selectedDate);
