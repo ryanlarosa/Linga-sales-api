@@ -2217,16 +2217,20 @@ async function buildHtmlReport(trendData, totals, selectedDate, anchorDates, rep
   return html;
 }
 
-async function sendEmailReport(fileBuffer, fileName, selectedDate, mailerSettings = null, reportType = "Covers", trendData = null, totals = null, anchorDates = null) {
+async function sendEmailReport(fileBuffer, fileName, selectedDate, mailerSettings = null, reportType = "Covers", trendData = null, totals = null, anchorDates = null, isTestRun = false) {
   const host = mailerSettings?.smtpHost || process.env.SMTP_HOST;
   const port = parseInt(mailerSettings?.smtpPort || process.env.SMTP_PORT || '587');
   const user = mailerSettings?.smtpUser || process.env.SMTP_USER;
   const pass = mailerSettings?.smtpPass || process.env.SMTP_PASS;
-  const recipients = mailerSettings?.reportRecipients || process.env.REPORT_RECIPIENTS;
+  
+  const recipients = (isTestRun && mailerSettings?.testRecipients)
+    ? mailerSettings.testRecipients
+    : (mailerSettings?.reportRecipients || process.env.REPORT_RECIPIENTS);
+
   const senderName = mailerSettings?.senderName || "Linga Reports";
 
   if (!host || !user || !pass || !recipients) {
-    console.warn("SMTP configuration or REPORT_RECIPIENTS is missing. Skipping email send.");
+    console.warn("SMTP configuration or recipients list is missing. Skipping email send.");
     return false;
   }
 
@@ -2688,20 +2692,22 @@ async function runDailyAutomation(isForced = false) {
         let emailResult = false;
         let emailError = null;
         try {
-            emailResult = await sendEmailReport(excelBuffer, fileName, selectedDate, mailerSettings, "Covers", trendData, totals, anchorDates);
+            emailResult = await sendEmailReport(excelBuffer, fileName, selectedDate, mailerSettings, "Covers", trendData, totals, anchorDates, isManualTest);
         } catch (err) {
             console.error("[Cron-Covers] Email Send Failed:", err.message);
             emailError = err.message;
         }
 
         const runStatus = (emailResult || driveResult) ? "SUCCESS" : "FAILED";
-        const runRecipients = mailerSettings?.reportRecipients || process.env.REPORT_RECIPIENTS || "";
+        const runRecipients = (isManualTest && mailerSettings?.testRecipients)
+          ? mailerSettings.testRecipients
+          : (mailerSettings?.reportRecipients || process.env.REPORT_RECIPIENTS || "");
         const runErrorMsg = (!emailResult && !driveResult) 
           ? `Email error: ${emailError || 'unknown'}, Drive error: ${driveError || 'unknown'}`
           : (emailError || driveError || null);
 
         await writeReportLogBackend({
-            type: "Automated",
+            type: isManualTest ? "Manual" : "Automated",
             reportType: "Covers",
             reportDate: selectedDate,
             status: runStatus,
@@ -2777,14 +2783,16 @@ async function runDailyAutomation(isForced = false) {
         let emailResult = false;
         let emailError = null;
         try {
-            emailResult = await sendEmailReport(excelBuffer, fileName, selectedDate, mailerSettings, "Sales", trendData, totals, anchorDates);
+            emailResult = await sendEmailReport(excelBuffer, fileName, selectedDate, mailerSettings, "Sales", trendData, totals, anchorDates, isManualTest);
         } catch (err) {
             console.error("[Cron-Sales] Email Send Failed:", err.message);
             emailError = err.message;
         }
 
         const runStatus = (emailResult || driveResult) ? "SUCCESS" : "FAILED";
-        const runRecipients = mailerSettings?.reportRecipients || process.env.REPORT_RECIPIENTS || "";
+        const runRecipients = (isManualTest && mailerSettings?.testRecipients)
+          ? mailerSettings.testRecipients
+          : (mailerSettings?.reportRecipients || process.env.REPORT_RECIPIENTS || "");
         const runErrorMsg = (!emailResult && !driveResult) 
           ? `Email error: ${emailError || 'unknown'}, Drive error: ${driveError || 'unknown'}`
           : (emailError || driveError || null);

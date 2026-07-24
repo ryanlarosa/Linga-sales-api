@@ -102,6 +102,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
     smtpUser: "",
     smtpPass: "",
     reportRecipients: "",
+    testRecipients: "",
     googleDriveFolderId: "",
     googleServiceAccountKey: "",
     emailSubjectTemplate: "{type} Report - {date}",
@@ -1346,7 +1347,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
-                    Recipients List (Comma-Separated)
+                    Production Recipients List (Comma-Separated)
                   </label>
                   <input
                     value={mailerSettings.reportRecipients || ""}
@@ -1354,6 +1355,18 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                     placeholder="boss@domain.com, accounts@domain.com"
                     className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
                   />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-rose-500 uppercase ml-1">
+                    Test / Trigger Email Recipients (Optional)
+                  </label>
+                  <input
+                    value={mailerSettings.testRecipients || ""}
+                    onChange={(e) => setMailerSettings({ ...mailerSettings, testRecipients: e.target.value })}
+                    placeholder="test-email@domain.com (Used for manual test triggers)"
+                    className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-rose-200 dark:border-rose-900/40 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
+                  />
+                  <p className="text-[10px] text-slate-400 ml-1">When clicking "Trigger Automation Test", emails will be sent to this recipient instead of the production list.</p>
                 </div>
                 <div className="border-t border-slate-100 dark:border-slate-800 my-4 pt-4 space-y-4">
                   <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400">Google Drive Upload (Optional)</h4>
