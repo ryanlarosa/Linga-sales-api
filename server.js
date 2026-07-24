@@ -2721,46 +2721,46 @@ async function runDailyAutomation(isForced = false) {
     // -- Sales Tracker execution --
     if (reportTypes.includes("Sales")) {
         console.log(`[Cron] Executing Sales Report for date ${selectedDate}...`);
-        const trendData = [];
         const totals = { thisWk: 0, lastWk: 0, lastMth: 0, lastYr: 0 };
         const discountsData = [];
 
-        for (let i = 0; i < filteredStores.length; i++) {
-            const store = filteredStores[i];
-            console.log(`[Cron-Sales] Fetching data for ${store.name}...`);
-            const salesSummary = await fetchStoreSalesTrendSummaryBackend(store.id, anchorDates);
-            
-            const storeData = {
-                storeId: store.id,
-                storeName: store.name,
-                brand: store.brand,
-                thisWk: salesSummary[formatDateString(anchorDates[0])]?.netSales || 0,
-                lastWk: salesSummary[formatDateString(anchorDates[1])]?.netSales || 0,
-                lastMth: salesSummary[formatDateString(anchorDates[2])]?.netSales || 0,
-                lastYr: salesSummary[formatDateString(anchorDates[3])]?.netSales || 0,
-            };
+        const trendData = await Promise.all(
+            filteredStores.map(async (store) => {
+                console.log(`[Cron-Sales] Fetching data for ${store.name}...`);
+                const salesSummary = await fetchStoreSalesTrendSummaryBackend(store.id, anchorDates);
+                
+                try {
+                    const discounts = await fetchStoreDiscountsBackend(store.id, selectedDate);
+                    if (discounts && discounts.length > 0) {
+                        discounts.forEach(d => {
+                            discountsData.push({
+                                storeName: store.name,
+                                ...d
+                            });
+                        });
+                    }
+                } catch (err) {
+                    console.error("[Cron-Sales] Discount fetch error:", err.message);
+                }
 
-            trendData.push(storeData);
+                return {
+                    storeId: store.id,
+                    storeName: store.name,
+                    brand: store.brand,
+                    thisWk: salesSummary[formatDateString(anchorDates[0])]?.netSales || 0,
+                    lastWk: salesSummary[formatDateString(anchorDates[1])]?.netSales || 0,
+                    lastMth: salesSummary[formatDateString(anchorDates[2])]?.netSales || 0,
+                    lastYr: salesSummary[formatDateString(anchorDates[3])]?.netSales || 0,
+                };
+            })
+        );
+
+        trendData.forEach(storeData => {
             totals.thisWk += storeData.thisWk;
             totals.lastWk += storeData.lastWk;
             totals.lastMth += storeData.lastMth;
             totals.lastYr += storeData.lastYr;
-
-            // Fetch discounts for this store's anchor date
-            try {
-                const discounts = await fetchStoreDiscountsBackend(store.id, selectedDate);
-                if (discounts && discounts.length > 0) {
-                    discounts.forEach(d => {
-                        discountsData.push({
-                            storeName: store.name,
-                            ...d
-                        });
-                    });
-                }
-            } catch (err) {
-                console.error("[Cron-Sales] Discount fetch error:", err.message);
-            }
-        }
+        });
 
         const excelBuffer = await generateSalesExcelBuffer(trendData, totals, selectedDate, anchorDates, discountsData);
         const fileName = `Consolidated_Sales_Report_${selectedDate}.xlsx`;
