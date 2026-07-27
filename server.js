@@ -952,6 +952,11 @@ async function saveHybridDailyRecord(storeId, dateStrIso, salesData, summaryData
       updatedAt: new Date().toISOString()
     };
 
+    if (netSalesTotal === 0 && coversTotal === 0 && checksTotal === 0) {
+      console.log(`[Hybrid Save Skipped] No sales/covers data for ${storeId} on ${dateStrIso}`);
+      return;
+    }
+
     const docId = `${storeId}_${dateStrIso}`;
     await Promise.all([
       setDoc(doc(db, "historical_daily_stats", docId), layer1Record, { merge: true }),
@@ -1011,17 +1016,19 @@ async function fetchStoreTrendSummaryBackend(storeId, dates) {
       const dateStrIso = `${yyyy}-${mm}-${dd}`;
 
       try {
-        // Check historical_daily_stats first
+        // Check historical_daily_stats first (only count as cache hit if covers > 0 or netSales > 0)
         try {
           const histRef = doc(db, 'historical_daily_stats', `${storeId}_${dateStrIso}`);
           const histSnap = await getDoc(histRef);
           if (histSnap.exists()) {
             const histData = histSnap.data();
-            results[dateKey] = {
-              covers: histData.covers || 0,
-              netSales: histData.netSales || 0
-            };
-            return;
+            if ((histData.covers && histData.covers > 0) || (histData.netSales && histData.netSales > 0)) {
+              results[dateKey] = {
+                covers: histData.covers || 0,
+                netSales: histData.netSales || 0
+              };
+              return;
+            }
           }
         } catch (e) {
           console.error(`[Historical Stats Load Error] Failed to read stats for ${storeId} on ${dateStrIso}:`, e.message);
@@ -2646,6 +2653,14 @@ async function runDailyAutomation(isManualTest = false) {
         return resultsSummary;
     }
 
+    const chunkArray = (arr, size) => {
+        const chunks = [];
+        for (let i = 0; i < arr.length; i += size) {
+            chunks.push(arr.slice(i, i + size));
+        }
+        return chunks;
+    };
+
     // 5. Run Reports depending on Settings
     const reportTypes = settings.reportTypes || ["Covers"];
     
@@ -2653,22 +2668,28 @@ async function runDailyAutomation(isManualTest = false) {
     if (reportTypes.includes("Covers")) {
         console.log(`[Cron] Executing Covers Report for date ${selectedDate}...`);
         const totals = { thisWk: 0, lastWk: 0, lastMth: 0, lastYr: 0 };
+        const trendData = [];
 
-        const trendData = await Promise.all(
-            filteredStores.map(async (store) => {
-                console.log(`[Cron-Covers] Fetching data for ${store.name}...`);
-                const summary = await fetchStoreTrendSummaryBackend(store.id, anchorDates);
-                return {
-                    storeId: store.id,
-                    storeName: store.name,
-                    brand: store.brand,
-                    thisWk: summary[formatDateString(anchorDates[0])]?.covers || 0,
-                    lastWk: summary[formatDateString(anchorDates[1])]?.covers || 0,
-                    lastMth: summary[formatDateString(anchorDates[2])]?.covers || 0,
-                    lastYr: summary[formatDateString(anchorDates[3])]?.covers || 0,
-                };
-            })
-        );
+        const storeChunks = chunkArray(filteredStores, 3);
+        for (const chunk of storeChunks) {
+            const chunkResults = await Promise.all(
+                chunk.map(async (store) => {
+                    console.log(`[Cron-Covers] Fetching data for ${store.name}...`);
+                    const summary = await fetchStoreTrendSummaryBackend(store.id, anchorDates);
+                    return {
+                        storeId: store.id,
+                        storeName: store.name,
+                        brand: store.brand,
+                        thisWk: summary[formatDateString(anchorDates[0])]?.covers || 0,
+                        lastWk: summary[formatDateString(anchorDates[1])]?.covers || 0,
+                        lastMth: summary[formatDateString(anchorDates[2])]?.covers || 0,
+                        lastYr: summary[formatDateString(anchorDates[3])]?.covers || 0,
+                    };
+                })
+            );
+            trendData.push(...chunkResults);
+            await new Promise(resolve => setTimeout(resolve, 150));
+        }
 
         trendData.forEach(storeData => {
             totals.thisWk += storeData.thisWk;
@@ -2729,37 +2750,43 @@ async function runDailyAutomation(isManualTest = false) {
         console.log(`[Cron] Executing Sales Report for date ${selectedDate}...`);
         const totals = { thisWk: 0, lastWk: 0, lastMth: 0, lastYr: 0 };
         const discountsData = [];
+        const trendData = [];
 
-        const trendData = await Promise.all(
-            filteredStores.map(async (store) => {
-                console.log(`[Cron-Sales] Fetching data for ${store.name}...`);
-                const salesSummary = await fetchStoreTrendSummaryBackend(store.id, anchorDates);
-                
-                try {
-                    const discounts = await fetchStoreDiscountsBackend(store.id, selectedDate);
-                    if (discounts && discounts.length > 0) {
-                        discounts.forEach(d => {
-                            discountsData.push({
-                                storeName: store.name,
-                                ...d
+        const storeChunks = chunkArray(filteredStores, 3);
+        for (const chunk of storeChunks) {
+            const chunkResults = await Promise.all(
+                chunk.map(async (store) => {
+                    console.log(`[Cron-Sales] Fetching data for ${store.name}...`);
+                    const salesSummary = await fetchStoreTrendSummaryBackend(store.id, anchorDates);
+                    
+                    try {
+                        const discounts = await fetchStoreDiscountsBackend(store.id, selectedDate);
+                        if (discounts && discounts.length > 0) {
+                            discounts.forEach(d => {
+                                discountsData.push({
+                                    storeName: store.name,
+                                    ...d
+                                });
                             });
-                        });
+                        }
+                    } catch (err) {
+                        console.error("[Cron-Sales] Discount fetch error:", err.message);
                     }
-                } catch (err) {
-                    console.error("[Cron-Sales] Discount fetch error:", err.message);
-                }
 
-                return {
-                    storeId: store.id,
-                    storeName: store.name,
-                    brand: store.brand,
-                    thisWk: salesSummary[formatDateString(anchorDates[0])]?.netSales || 0,
-                    lastWk: salesSummary[formatDateString(anchorDates[1])]?.netSales || 0,
-                    lastMth: salesSummary[formatDateString(anchorDates[2])]?.netSales || 0,
-                    lastYr: salesSummary[formatDateString(anchorDates[3])]?.netSales || 0,
-                };
-            })
-        );
+                    return {
+                        storeId: store.id,
+                        storeName: store.name,
+                        brand: store.brand,
+                        thisWk: salesSummary[formatDateString(anchorDates[0])]?.netSales || 0,
+                        lastWk: salesSummary[formatDateString(anchorDates[1])]?.netSales || 0,
+                        lastMth: salesSummary[formatDateString(anchorDates[2])]?.netSales || 0,
+                        lastYr: salesSummary[formatDateString(anchorDates[3])]?.netSales || 0,
+                    };
+                })
+            );
+            trendData.push(...chunkResults);
+            await new Promise(resolve => setTimeout(resolve, 150));
+        }
 
         trendData.forEach(storeData => {
             totals.thisWk += storeData.thisWk;
