@@ -25,39 +25,63 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// --- Helper Function ---
-async function callExternalApi(url, params = {}) {
-    const start = Date.now();
-    console.log(`[Proxy Request] Range: ${params.fromDate} to ${params.toDate} for ${url}`);
-    try {
-        const response = await axios.get(url, {
-            headers: { 
-                'apikey': LINGA_API_KEY,
-                'Content-Type': 'application/json',
-                'User-Agent': 'LingaPOS-Analytics-Enterprise/3.0'
-            },
-            params: params,
-            timeout: AXIOS_TIMEOUT,
-            maxContentLength: Infinity,
-            maxBodyLength: Infinity
-        });
-        const duration = Date.now() - start;
-        console.log(`[Proxy Response] OK in ${duration}ms: ${url}`);
-        return response;
-    } catch (error) {
-        const duration = Date.now() - start;
-        if (axios.isAxiosError(error)) {
-            const status = error.response?.status || 500;
-            const msg = error.response?.data?.message || error.message;
-            console.error(`[Proxy Error ${status}] after ${duration}ms: ${msg}`);
-            const err = new Error(msg);
-            // @ts-ignore
-            err.status = status;
-            // @ts-ignore
-            err.data = error.response?.data;
-            throw err;
+// --- Helper Function with 5-Retry Guard Engine ---
+async function callExternalApi(url, params = {}, retries = 5) {
+    const maxRetries = retries;
+    let delayMs = 300;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        const start = Date.now();
+        const rangeText = (params.fromDate || params.toDate) ? `Range: ${params.fromDate || ''} to ${params.toDate || ''}` : '';
+        console.log(`[Proxy Request] (Attempt ${attempt}/${maxRetries}) ${rangeText} ${url}`);
+        
+        try {
+            const response = await axios.get(url, {
+                headers: { 
+                    'apikey': LINGA_API_KEY,
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'LingaPOS-Analytics-Enterprise/3.0'
+                },
+                params: params,
+                timeout: AXIOS_TIMEOUT,
+                maxContentLength: Infinity,
+                maxBodyLength: Infinity
+            });
+            const duration = Date.now() - start;
+            if (attempt > 1) {
+                console.log(`[Proxy Recovery] OK on retry attempt ${attempt}/${maxRetries} in ${duration}ms: ${url}`);
+            } else {
+                console.log(`[Proxy Response] OK in ${duration}ms: ${url}`);
+            }
+            return response;
+        } catch (error) {
+            const duration = Date.now() - start;
+            const status = axios.isAxiosError(error) ? (error.response?.status || 500) : 500;
+            const msg = axios.isAxiosError(error) ? (error.response?.data?.message || error.message) : error.message;
+
+            console.warn(`[Proxy Error ${status}] Attempt ${attempt}/${maxRetries} failed in ${duration}ms: ${msg}`);
+
+            // Do not retry 401/403 auth credentials errors
+            if (status === 401 || status === 403) {
+                const err = new Error(msg);
+                err.status = status;
+                err.data = error.response?.data;
+                throw err;
+            }
+
+            if (attempt === maxRetries) {
+                console.error(`[Proxy Failure Guard] All ${maxRetries} retry attempts exhausted for ${url}. Final Error: ${msg}`);
+                const err = new Error(`[Linga POS API Guard Failure after ${maxRetries} retries] ${msg}`);
+                err.status = status;
+                err.data = error.response?.data;
+                err.isExhausted = true;
+                throw err;
+            }
+
+            console.log(`[Proxy Retry Guard] Staggering retry in ${delayMs}ms... (Attempt ${attempt + 1}/${maxRetries})`);
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+            delayMs *= 2;
         }
-        throw error;
     }
 }
 
