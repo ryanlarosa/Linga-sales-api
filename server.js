@@ -2337,6 +2337,23 @@ async function writeReportLogBackend({ type, reportType, reportDate, status, rec
   }
 }
 
+async function isReportAlreadySentTodayBackend(reportType, reportDate) {
+  try {
+    const q = query(
+      collection(db, "report_logs"),
+      where("reportType", "==", reportType),
+      where("reportDate", "==", reportDate),
+      where("type", "==", "Automated"),
+      where("status", "==", "SUCCESS")
+    );
+    const snap = await getDocs(q);
+    return !snap.empty;
+  } catch (err) {
+    console.error("Error checking report deduplication log:", err.message);
+    return false;
+  }
+}
+
 // --- Email and Drive Report Route (Manual UI Trigger) ---
 app.post('/api/v1/reports/email-cover-tracker', checkAuth, async (req, res) => {
     try {
@@ -2690,127 +2707,146 @@ async function runDailyAutomation(isManualTest = false) {
     
     // -- Covers Tracker execution --
     if (reportTypes.includes("Covers")) {
-        console.log(`[Cron] Executing Covers Report for date ${selectedDate}...`);
-        const totals = { thisWk: 0, lastWk: 0, lastMth: 0, lastYr: 0 };
-        const trendData = [];
+        const coversAlreadySent = !isManualTest && (await isReportAlreadySentTodayBackend("Covers", selectedDate));
+        if (coversAlreadySent) {
+            console.log(`[Cron Deduplication] Skipping Covers Report for ${selectedDate}: Already sent successfully today.`);
+            resultsSummary.reportsRun.push({
+                type: "Covers",
+                skipped: true,
+                reason: "Already sent today"
+            });
+        } else {
+            console.log(`[Cron] Executing Covers Report for date ${selectedDate}...`);
+            const totals = { thisWk: 0, lastWk: 0, lastMth: 0, lastYr: 0 };
+            const trendData = [];
 
-        const storeChunks = chunkArray(filteredStores, 3);
-        for (const chunk of storeChunks) {
-            const chunkResults = await Promise.all(
-                chunk.map(async (store) => {
-                    console.log(`[Cron-Covers] Fetching data for ${store.name}...`);
-                    const summary = await fetchStoreTrendSummaryBackend(store.id, anchorDates);
-                    return {
-                        storeId: store.id,
-                        storeName: store.name,
-                        brand: store.brand,
-                        thisWk: summary[formatDateString(anchorDates[0])]?.covers || 0,
-                        lastWk: summary[formatDateString(anchorDates[1])]?.covers || 0,
-                        lastMth: summary[formatDateString(anchorDates[2])]?.covers || 0,
-                        lastYr: summary[formatDateString(anchorDates[3])]?.covers || 0,
-                    };
-                })
-            );
-            trendData.push(...chunkResults);
-            await new Promise(resolve => setTimeout(resolve, 150));
+            const storeChunks = chunkArray(filteredStores, 3);
+            for (const chunk of storeChunks) {
+                const chunkResults = await Promise.all(
+                    chunk.map(async (store) => {
+                        console.log(`[Cron-Covers] Fetching data for ${store.name}...`);
+                        const summary = await fetchStoreTrendSummaryBackend(store.id, anchorDates);
+                        return {
+                            storeId: store.id,
+                            storeName: store.name,
+                            brand: store.brand,
+                            thisWk: summary[formatDateString(anchorDates[0])]?.covers || 0,
+                            lastWk: summary[formatDateString(anchorDates[1])]?.covers || 0,
+                            lastMth: summary[formatDateString(anchorDates[2])]?.covers || 0,
+                            lastYr: summary[formatDateString(anchorDates[3])]?.covers || 0,
+                        };
+                    })
+                );
+                trendData.push(...chunkResults);
+                await new Promise(resolve => setTimeout(resolve, 150));
+            }
+
+            trendData.forEach(storeData => {
+                totals.thisWk += storeData.thisWk;
+                totals.lastWk += storeData.lastWk;
+                totals.lastMth += storeData.lastMth;
+                totals.lastYr += storeData.lastYr;
+            });
+
+            const excelBuffer = await generateExcelBuffer(trendData, totals, selectedDate, anchorDates);
+            const fileName = `Consolidated_Cover_Report_${selectedDate}.xlsx`;
+
+            let driveResult = null;
+            let driveError = null;
+            try {
+                driveResult = await uploadToGoogleDrive(excelBuffer, fileName, mailerSettings, selectedDate);
+            } catch (err) {
+                console.error("[Cron-Covers] Google Drive Upload Failed:", err.message);
+                driveError = err.message;
+            }
+
+            let emailResult = false;
+            let emailError = null;
+            try {
+                emailResult = await sendEmailReport(excelBuffer, fileName, selectedDate, mailerSettings, "Covers", trendData, totals, anchorDates, isManualTest);
+            } catch (err) {
+                console.error("[Cron-Covers] Email Send Failed:", err.message);
+                emailError = err.message;
+            }
+
+            const runStatus = (emailResult || driveResult) ? "SUCCESS" : "FAILED";
+            const runRecipients = (isManualTest && mailerSettings?.testRecipients)
+              ? mailerSettings.testRecipients
+              : (mailerSettings?.reportRecipients || process.env.REPORT_RECIPIENTS || "");
+            const runErrorMsg = (!emailResult && !driveResult) 
+              ? `Email error: ${emailError || 'unknown'}, Drive error: ${driveError || 'unknown'}`
+              : (emailError || driveError || null);
+
+            await writeReportLogBackend({
+                type: isManualTest ? "Manual" : "Automated",
+                reportType: "Covers",
+                reportDate: selectedDate,
+                status: runStatus,
+                recipients: runRecipients,
+                driveLink: driveResult?.webViewLink || null,
+                errorMsg: runErrorMsg
+            });
+
+            resultsSummary.reportsRun.push({
+                type: "Covers",
+                emailSent: emailResult,
+                driveUploaded: !!driveResult,
+                driveLink: driveResult?.webViewLink || null
+            });
         }
-
-        trendData.forEach(storeData => {
-            totals.thisWk += storeData.thisWk;
-            totals.lastWk += storeData.lastWk;
-            totals.lastMth += storeData.lastMth;
-            totals.lastYr += storeData.lastYr;
-        });
-
-        const excelBuffer = await generateExcelBuffer(trendData, totals, selectedDate, anchorDates);
-        const fileName = `Consolidated_Cover_Report_${selectedDate}.xlsx`;
-
-        let driveResult = null;
-        let driveError = null;
-        try {
-            driveResult = await uploadToGoogleDrive(excelBuffer, fileName, mailerSettings, selectedDate);
-        } catch (err) {
-            console.error("[Cron-Covers] Google Drive Upload Failed:", err.message);
-            driveError = err.message;
-        }
-
-        let emailResult = false;
-        let emailError = null;
-        try {
-            emailResult = await sendEmailReport(excelBuffer, fileName, selectedDate, mailerSettings, "Covers", trendData, totals, anchorDates, isManualTest);
-        } catch (err) {
-            console.error("[Cron-Covers] Email Send Failed:", err.message);
-            emailError = err.message;
-        }
-
-        const runStatus = (emailResult || driveResult) ? "SUCCESS" : "FAILED";
-        const runRecipients = (isManualTest && mailerSettings?.testRecipients)
-          ? mailerSettings.testRecipients
-          : (mailerSettings?.reportRecipients || process.env.REPORT_RECIPIENTS || "");
-        const runErrorMsg = (!emailResult && !driveResult) 
-          ? `Email error: ${emailError || 'unknown'}, Drive error: ${driveError || 'unknown'}`
-          : (emailError || driveError || null);
-
-        await writeReportLogBackend({
-            type: isManualTest ? "Manual" : "Automated",
-            reportType: "Covers",
-            reportDate: selectedDate,
-            status: runStatus,
-            recipients: runRecipients,
-            driveLink: driveResult?.webViewLink || null,
-            errorMsg: runErrorMsg
-        });
-
-        resultsSummary.reportsRun.push({
-            type: "Covers",
-            emailSent: emailResult,
-            driveUploaded: !!driveResult,
-            driveLink: driveResult?.webViewLink || null
-        });
     }
 
     // -- Sales Tracker execution --
     if (reportTypes.includes("Sales")) {
-        console.log(`[Cron] Executing Sales Report for date ${selectedDate}...`);
-        const totals = { thisWk: 0, lastWk: 0, lastMth: 0, lastYr: 0 };
-        const discountsData = [];
-        const trendData = [];
+        const salesAlreadySent = !isManualTest && (await isReportAlreadySentTodayBackend("Sales", selectedDate));
+        if (salesAlreadySent) {
+            console.log(`[Cron Deduplication] Skipping Sales Report for ${selectedDate}: Already sent successfully today.`);
+            resultsSummary.reportsRun.push({
+                type: "Sales",
+                skipped: true,
+                reason: "Already sent today"
+            });
+        } else {
+            console.log(`[Cron] Executing Sales Report for date ${selectedDate}...`);
+            const totals = { thisWk: 0, lastWk: 0, lastMth: 0, lastYr: 0 };
+            const discountsData = [];
+            const trendData = [];
 
-        const storeChunks = chunkArray(filteredStores, 3);
-        for (const chunk of storeChunks) {
-            const chunkResults = await Promise.all(
-                chunk.map(async (store) => {
-                    console.log(`[Cron-Sales] Fetching data for ${store.name}...`);
-                    const salesSummary = await fetchStoreTrendSummaryBackend(store.id, anchorDates);
-                    
-                    try {
-                        const discounts = await fetchStoreDiscountsBackend(store.id, selectedDate);
-                        if (discounts && discounts.length > 0) {
-                            discounts.forEach(d => {
-                                discountsData.push({
-                                    storeName: store.name,
-                                    ...d
+            const storeChunks = chunkArray(filteredStores, 3);
+            for (const chunk of storeChunks) {
+                const chunkResults = await Promise.all(
+                    chunk.map(async (store) => {
+                        console.log(`[Cron-Sales] Fetching data for ${store.name}...`);
+                        const salesSummary = await fetchStoreTrendSummaryBackend(store.id, anchorDates);
+                        
+                        try {
+                            const discounts = await fetchStoreDiscountsBackend(store.id, selectedDate);
+                            if (discounts && discounts.length > 0) {
+                                discounts.forEach(d => {
+                                    discountsData.push({
+                                        storeName: store.name,
+                                        ...d
+                                    });
                                 });
-                            });
+                            }
+                        } catch (err) {
+                            console.error("[Cron-Sales] Discount fetch error:", err.message);
                         }
-                    } catch (err) {
-                        console.error("[Cron-Sales] Discount fetch error:", err.message);
-                    }
 
-                    return {
-                        storeId: store.id,
-                        storeName: store.name,
-                        brand: store.brand,
-                        thisWk: salesSummary[formatDateString(anchorDates[0])]?.netSales || 0,
-                        lastWk: salesSummary[formatDateString(anchorDates[1])]?.netSales || 0,
-                        lastMth: salesSummary[formatDateString(anchorDates[2])]?.netSales || 0,
-                        lastYr: salesSummary[formatDateString(anchorDates[3])]?.netSales || 0,
-                    };
-                })
-            );
-            trendData.push(...chunkResults);
-            await new Promise(resolve => setTimeout(resolve, 150));
-        }
+                        return {
+                            storeId: store.id,
+                            storeName: store.name,
+                            brand: store.brand,
+                            thisWk: salesSummary[formatDateString(anchorDates[0])]?.netSales || 0,
+                            lastWk: salesSummary[formatDateString(anchorDates[1])]?.netSales || 0,
+                            lastMth: salesSummary[formatDateString(anchorDates[2])]?.netSales || 0,
+                            lastYr: salesSummary[formatDateString(anchorDates[3])]?.netSales || 0,
+                        };
+                    })
+                );
+                trendData.push(...chunkResults);
+                await new Promise(resolve => setTimeout(resolve, 150));
+            }
 
         trendData.forEach(storeData => {
             totals.thisWk += storeData.thisWk;
@@ -2849,7 +2885,7 @@ async function runDailyAutomation(isManualTest = false) {
           : (emailError || driveError || null);
 
         await writeReportLogBackend({
-            type: "Automated",
+            type: isManualTest ? "Manual" : "Automated",
             reportType: "Sales",
             reportDate: selectedDate,
             status: runStatus,
@@ -2864,6 +2900,7 @@ async function runDailyAutomation(isManualTest = false) {
             driveUploaded: !!driveResult,
             driveLink: driveResult?.webViewLink || null
         });
+        }
     }
 
     return resultsSummary;
