@@ -19,7 +19,7 @@
   "crons": [
     {
       "path": "/api/v1/cron/daily-cover-tracker",
-      "schedule": "0 4 * * *"
+      "schedule": "*/10 * * * *"
     }
   ]
 }
