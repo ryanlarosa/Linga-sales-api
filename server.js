@@ -2636,7 +2636,26 @@ async function runDailyAutomation(isManualTest = false) {
 
     // 4. Check time match (Dubai Time GST / UTC+4)
     if (!isManualTest) {
-        const [targetHour, targetMinute] = (settings.fetchTime || "08:00").split(':').map(Number);
+        const parseFetchTime = (timeStr) => {
+            if (!timeStr) return { hour: 8, minute: 0 };
+            const str = String(timeStr).trim().toUpperCase();
+            const isPM = str.includes("PM");
+            const isAM = str.includes("AM");
+            const cleanStr = str.replace(/[A-Z\s]/g, "");
+            const parts = cleanStr.split(":");
+            let hour = parseInt(parts[0], 10);
+            let minute = parseInt(parts[1], 10);
+
+            if (isNaN(hour)) hour = 8;
+            if (isNaN(minute)) minute = 0;
+
+            if (isPM && hour < 12) hour += 12;
+            if (isAM && hour === 12) hour = 0;
+
+            return { hour, minute };
+        };
+
+        const { hour: targetHour, minute: targetMinute } = parseFetchTime(settings.fetchTime);
         
         const dubaiTimeStr = new Date().toLocaleString("en-US", { timeZone: "Asia/Dubai" });
         const dubaiDate = new Date(dubaiTimeStr);
@@ -2648,8 +2667,8 @@ async function runDailyAutomation(isManualTest = false) {
 
         // Check if current time has passed the target time and is within a 10-minute execution window
         const diff = currentMinOfDay - targetMinOfDay;
-        if (diff < 0 || diff >= 10) {
-            console.log(`[Cron] Skipping: Dubai time is ${dubaiHour}:${dubaiMinute}, configured time is ${settings.fetchTime}.`);
+        if (isNaN(diff) || diff < 0 || diff >= 10) {
+            console.log(`[Cron] Skipping: Dubai time is ${dubaiHour}:${dubaiMinute}, configured time is ${settings.fetchTime} (Parsed ${targetHour}:${targetMinute}).`);
             resultsSummary.message = `Skipped: current Dubai time (${dubaiHour}:${dubaiMinute}) does not match configured automation time (${settings.fetchTime}).`;
             return resultsSummary;
         }
