@@ -2028,20 +2028,14 @@ async function buildHtmlReport(trendData, totals, selectedDate, anchorDates, rep
   const isSales = reportType.toLowerCase() === "sales";
   
   const fmtActual = (val) => {
-    if (val === 0) return "-";
-    if (isSales) {
-      return "AED " + val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    }
-    return val.toLocaleString();
+    if (val === 0 || !val) return "-";
+    return Math.round(val).toLocaleString();
   };
 
   const fmtVar = (val) => {
     if (val === "na" || val === undefined) return "na";
     if (val === 0) return "-";
-    const absVal = Math.abs(val);
-    if (isSales) {
-      return "AED " + absVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    }
+    const absVal = Math.round(Math.abs(val));
     return absVal.toLocaleString();
   };
 
