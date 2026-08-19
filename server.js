@@ -2640,29 +2640,29 @@ async function runDailyAutomation(isManualTest = false) {
         return resultsSummary;
     }
 
-    // 4. Check time match (Dubai Time GST / UTC+4)
-    if (!isManualTest) {
-        const parseFetchTime = (timeStr) => {
-            if (!timeStr) return { hour: 8, minute: 0 };
-            const str = String(timeStr).trim().toUpperCase();
-            const isPM = str.includes("PM");
-            const isAM = str.includes("AM");
-            const cleanStr = str.replace(/[A-Z\s]/g, "");
-            const parts = cleanStr.split(":");
-            let hour = parseInt(parts[0], 10);
-            let minute = parseInt(parts[1], 10);
+    // 4. Time window helper for individual report timings
+    const parseFetchTime = (timeStr, defaultTime = "09:30") => {
+        const target = timeStr || defaultTime;
+        const str = String(target).trim().toUpperCase();
+        const isPM = str.includes("PM");
+        const isAM = str.includes("AM");
+        const cleanStr = str.replace(/[A-Z\s]/g, "");
+        const parts = cleanStr.split(":");
+        let hour = parseInt(parts[0], 10);
+        let minute = parseInt(parts[1], 10);
 
-            if (isNaN(hour)) hour = 8;
-            if (isNaN(minute)) minute = 0;
+        if (isNaN(hour)) hour = 9;
+        if (isNaN(minute)) minute = 30;
 
-            if (isPM && hour < 12) hour += 12;
-            if (isAM && hour === 12) hour = 0;
+        if (isPM && hour < 12) hour += 12;
+        if (isAM && hour === 12) hour = 0;
 
-            return { hour, minute };
-        };
+        return { hour, minute };
+    };
 
-        const { hour: targetHour, minute: targetMinute } = parseFetchTime(settings.fetchTime);
-        
+    const isTimeWindowMatch = (targetTimeStr, defaultTime) => {
+        if (isManualTest) return true;
+        const { hour: targetHour, minute: targetMinute } = parseFetchTime(targetTimeStr, defaultTime);
         const dubaiTimeStr = new Date().toLocaleString("en-US", { timeZone: "Asia/Dubai" });
         const dubaiDate = new Date(dubaiTimeStr);
         const dubaiHour = dubaiDate.getHours();
@@ -2671,16 +2671,11 @@ async function runDailyAutomation(isManualTest = false) {
         const currentMinOfDay = dubaiHour * 60 + dubaiMinute;
         const targetMinOfDay = targetHour * 60 + targetMinute;
 
-        // Check if current time has passed the target time and is within a 10-minute execution window
         const diff = currentMinOfDay - targetMinOfDay;
-        if (isNaN(diff) || diff < 0 || diff >= 10) {
-            console.log(`[Cron] Skipping: Dubai time is ${dubaiHour}:${dubaiMinute}, configured time is ${settings.fetchTime} (Parsed ${targetHour}:${targetMinute}).`);
-            resultsSummary.message = `Skipped: current Dubai time (${dubaiHour}:${dubaiMinute}) does not match configured automation time (${settings.fetchTime}).`;
-            return resultsSummary;
-        }
-    }
+        return !isNaN(diff) && diff >= 0 && diff < 10;
+    };
 
-    console.log("[Cron] Running scheduled Daily Report generation...");
+    console.log("[Cron] Checking scheduled Daily Report triggers...");
 
     // 5. Resolve anchor date (yesterday)
     const today = new Date();
@@ -2688,7 +2683,7 @@ async function runDailyAutomation(isManualTest = false) {
     today.setUTCHours(0, 0, 0, 0);
     const selectedDate = today.toISOString().split('T')[0];
 
-    // 3. Calculate 4 anchor dates
+    // Calculate 4 anchor dates
     const lastWk = new Date(today);
     lastWk.setUTCDate(today.getUTCDate() - 7);
     const lastMth = new Date(today);
@@ -2703,7 +2698,7 @@ async function runDailyAutomation(isManualTest = false) {
       return `${day}-${months[d.getUTCMonth()]}-${d.getUTCFullYear()}`;
     };
 
-    // 4. Fetch stores
+    // Fetch stores
     const allStores = await getActiveStores();
     const targetStoreIds = settings.selectedStores || [];
     const filteredStores = allStores.filter(store => {
@@ -2727,111 +2722,130 @@ async function runDailyAutomation(isManualTest = false) {
         return chunks;
     };
 
-    // 5. Run Reports depending on Settings
+    // 6. Run Reports depending on Settings
     const reportTypes = settings.reportTypes || ["Covers"];
     
     // -- Covers Tracker execution --
     if (reportTypes.includes("Covers")) {
-        const coversAlreadySent = !isManualTest && (await isReportAlreadySentTodayBackend("Covers", selectedDate));
-        if (coversAlreadySent) {
-            console.log(`[Cron Deduplication] Skipping Covers Report for ${selectedDate}: Already sent successfully today.`);
+        const coversTimeMatch = isTimeWindowMatch(settings.coversFetchTime || settings.fetchTime, "09:30");
+        if (!coversTimeMatch) {
+            console.log(`[Cron] Skipping Covers Report: Dubai time does not match Covers configured time (${settings.coversFetchTime || settings.fetchTime || "09:30"}).`);
             resultsSummary.reportsRun.push({
                 type: "Covers",
                 skipped: true,
-                reason: "Already sent today"
+                reason: "Time window mismatch"
             });
         } else {
-            console.log(`[Cron] Executing Covers Report for date ${selectedDate}...`);
-            const totals = { thisWk: 0, lastWk: 0, lastMth: 0, lastYr: 0 };
-            const trendData = [];
+            const coversAlreadySent = !isManualTest && (await isReportAlreadySentTodayBackend("Covers", selectedDate));
+            if (coversAlreadySent) {
+                console.log(`[Cron Deduplication] Skipping Covers Report for ${selectedDate}: Already sent successfully today.`);
+                resultsSummary.reportsRun.push({
+                    type: "Covers",
+                    skipped: true,
+                    reason: "Already sent today"
+                });
+            } else {
+                console.log(`[Cron] Executing Covers Report for date ${selectedDate}...`);
+                const totals = { thisWk: 0, lastWk: 0, lastMth: 0, lastYr: 0 };
+                const trendData = [];
 
-            const storeChunks = chunkArray(filteredStores, 3);
-            for (const chunk of storeChunks) {
-                const chunkResults = await Promise.all(
-                    chunk.map(async (store) => {
-                        console.log(`[Cron-Covers] Fetching data for ${store.name}...`);
-                        const summary = await fetchStoreTrendSummaryBackend(store.id, anchorDates);
-                        return {
-                            storeId: store.id,
-                            storeName: store.name,
-                            brand: store.brand,
-                            thisWk: summary[formatDateString(anchorDates[0])]?.covers || 0,
-                            lastWk: summary[formatDateString(anchorDates[1])]?.covers || 0,
-                            lastMth: summary[formatDateString(anchorDates[2])]?.covers || 0,
-                            lastYr: summary[formatDateString(anchorDates[3])]?.covers || 0,
-                        };
-                    })
-                );
-                trendData.push(...chunkResults);
-                await new Promise(resolve => setTimeout(resolve, 150));
+                const storeChunks = chunkArray(filteredStores, 3);
+                for (const chunk of storeChunks) {
+                    const chunkResults = await Promise.all(
+                        chunk.map(async (store) => {
+                            console.log(`[Cron-Covers] Fetching data for ${store.name}...`);
+                            const summary = await fetchStoreTrendSummaryBackend(store.id, anchorDates);
+                            return {
+                                storeId: store.id,
+                                storeName: store.name,
+                                brand: store.brand,
+                                thisWk: summary[formatDateString(anchorDates[0])]?.covers || 0,
+                                lastWk: summary[formatDateString(anchorDates[1])]?.covers || 0,
+                                lastMth: summary[formatDateString(anchorDates[2])]?.covers || 0,
+                                lastYr: summary[formatDateString(anchorDates[3])]?.covers || 0,
+                            };
+                        })
+                    );
+                    trendData.push(...chunkResults);
+                    await new Promise(resolve => setTimeout(resolve, 150));
+                }
+
+                trendData.forEach(storeData => {
+                    totals.thisWk += storeData.thisWk;
+                    totals.lastWk += storeData.lastWk;
+                    totals.lastMth += storeData.lastMth;
+                    totals.lastYr += storeData.lastYr;
+                });
+
+                const excelBuffer = await generateExcelBuffer(trendData, totals, selectedDate, anchorDates);
+                const fileName = `Consolidated_Cover_Report_${selectedDate}.xlsx`;
+
+                let driveResult = null;
+                let driveError = null;
+                try {
+                    driveResult = await uploadToGoogleDrive(excelBuffer, fileName, mailerSettings, selectedDate);
+                } catch (err) {
+                    console.error("[Cron-Covers] Google Drive Upload Failed:", err.message);
+                    driveError = err.message;
+                }
+
+                let emailResult = false;
+                let emailError = null;
+                try {
+                    emailResult = await sendEmailReport(excelBuffer, fileName, selectedDate, mailerSettings, "Covers", trendData, totals, anchorDates, isManualTest);
+                } catch (err) {
+                    console.error("[Cron-Covers] Email Send Failed:", err.message);
+                    emailError = err.message;
+                }
+
+                const runStatus = (emailResult || driveResult) ? "SUCCESS" : "FAILED";
+                const runRecipients = (isManualTest && mailerSettings?.testRecipients)
+                  ? mailerSettings.testRecipients
+                  : (mailerSettings?.reportRecipients || process.env.REPORT_RECIPIENTS || "");
+                const runErrorMsg = (!emailResult && !driveResult) 
+                  ? `Email error: ${emailError || 'unknown'}, Drive error: ${driveError || 'unknown'}`
+                  : (emailError || driveError || null);
+
+                await writeReportLogBackend({
+                    type: isManualTest ? "Manual" : "Automated",
+                    reportType: "Covers",
+                    reportDate: selectedDate,
+                    status: runStatus,
+                    recipients: runRecipients,
+                    driveLink: driveResult?.webViewLink || null,
+                    errorMsg: runErrorMsg
+                });
+
+                resultsSummary.reportsRun.push({
+                    type: "Covers",
+                    emailSent: emailResult,
+                    driveUploaded: !!driveResult,
+                    driveLink: driveResult?.webViewLink || null
+                });
             }
-
-            trendData.forEach(storeData => {
-                totals.thisWk += storeData.thisWk;
-                totals.lastWk += storeData.lastWk;
-                totals.lastMth += storeData.lastMth;
-                totals.lastYr += storeData.lastYr;
-            });
-
-            const excelBuffer = await generateExcelBuffer(trendData, totals, selectedDate, anchorDates);
-            const fileName = `Consolidated_Cover_Report_${selectedDate}.xlsx`;
-
-            let driveResult = null;
-            let driveError = null;
-            try {
-                driveResult = await uploadToGoogleDrive(excelBuffer, fileName, mailerSettings, selectedDate);
-            } catch (err) {
-                console.error("[Cron-Covers] Google Drive Upload Failed:", err.message);
-                driveError = err.message;
-            }
-
-            let emailResult = false;
-            let emailError = null;
-            try {
-                emailResult = await sendEmailReport(excelBuffer, fileName, selectedDate, mailerSettings, "Covers", trendData, totals, anchorDates, isManualTest);
-            } catch (err) {
-                console.error("[Cron-Covers] Email Send Failed:", err.message);
-                emailError = err.message;
-            }
-
-            const runStatus = (emailResult || driveResult) ? "SUCCESS" : "FAILED";
-            const runRecipients = (isManualTest && mailerSettings?.testRecipients)
-              ? mailerSettings.testRecipients
-              : (mailerSettings?.reportRecipients || process.env.REPORT_RECIPIENTS || "");
-            const runErrorMsg = (!emailResult && !driveResult) 
-              ? `Email error: ${emailError || 'unknown'}, Drive error: ${driveError || 'unknown'}`
-              : (emailError || driveError || null);
-
-            await writeReportLogBackend({
-                type: isManualTest ? "Manual" : "Automated",
-                reportType: "Covers",
-                reportDate: selectedDate,
-                status: runStatus,
-                recipients: runRecipients,
-                driveLink: driveResult?.webViewLink || null,
-                errorMsg: runErrorMsg
-            });
-
-            resultsSummary.reportsRun.push({
-                type: "Covers",
-                emailSent: emailResult,
-                driveUploaded: !!driveResult,
-                driveLink: driveResult?.webViewLink || null
-            });
         }
     }
 
     // -- Sales Tracker execution --
     if (reportTypes.includes("Sales")) {
-        const salesAlreadySent = !isManualTest && (await isReportAlreadySentTodayBackend("Sales", selectedDate));
-        if (salesAlreadySent) {
-            console.log(`[Cron Deduplication] Skipping Sales Report for ${selectedDate}: Already sent successfully today.`);
+        const salesTimeMatch = isTimeWindowMatch(settings.salesFetchTime, "10:30");
+        if (!salesTimeMatch) {
+            console.log(`[Cron] Skipping Sales Report: Dubai time does not match Sales configured time (${settings.salesFetchTime || "10:30"}).`);
             resultsSummary.reportsRun.push({
                 type: "Sales",
                 skipped: true,
-                reason: "Already sent today"
+                reason: "Time window mismatch"
             });
         } else {
+            const salesAlreadySent = !isManualTest && (await isReportAlreadySentTodayBackend("Sales", selectedDate));
+            if (salesAlreadySent) {
+                console.log(`[Cron Deduplication] Skipping Sales Report for ${selectedDate}: Already sent successfully today.`);
+                resultsSummary.reportsRun.push({
+                    type: "Sales",
+                    skipped: true,
+                    reason: "Already sent today"
+                });
+            } else {
             console.log(`[Cron] Executing Sales Report for date ${selectedDate}...`);
             const totals = { thisWk: 0, lastWk: 0, lastMth: 0, lastYr: 0 };
             const discountsData = [];
@@ -2925,6 +2939,7 @@ async function runDailyAutomation(isManualTest = false) {
             driveUploaded: !!driveResult,
             driveLink: driveResult?.webViewLink || null
         });
+        }
         }
     }
 

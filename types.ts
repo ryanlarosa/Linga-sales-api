@@ -117,7 +117,9 @@ export interface FetchedData {
 
 export interface AutomationSettings {
   enabled: boolean;
-  fetchTime: string; // e.g. "08:00"
+  fetchTime: string; // e.g. "09:30" (legacy / default)
+  coversFetchTime?: string; // e.g. "09:30"
+  salesFetchTime?: string; // e.g. "10:30"
   reportTypes?: ("Covers" | "Sales")[];
   selectedStores?: string[];
 }

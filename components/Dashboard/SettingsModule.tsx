@@ -86,11 +86,15 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
   const [autoSettings, setAutoSettings] = useState<{
     enabled: boolean;
     fetchTime: string;
+    coversFetchTime?: string;
+    salesFetchTime?: string;
     reportTypes: ("Covers" | "Sales")[];
     selectedStores: string[];
   }>({
     enabled: true,
-    fetchTime: "08:00",
+    fetchTime: "09:30",
+    coversFetchTime: "09:30",
+    salesFetchTime: "10:30",
     reportTypes: ["Covers"],
     selectedStores: [],
   });
@@ -173,13 +177,18 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
       setCachingEnabled(cacheSet ? cacheSet.enabled !== false : true);
       const defaultAuto = {
         enabled: true,
-        fetchTime: "08:00",
+        fetchTime: "09:30",
+        coversFetchTime: "09:30",
+        salesFetchTime: "10:30",
         reportTypes: ["Covers"] as ("Covers" | "Sales")[],
         selectedStores: [] as string[]
       };
+      const loadedAuto = auto || {};
       setAutoSettings({
         ...defaultAuto,
-        ...(auto || {}),
+        ...loadedAuto,
+        coversFetchTime: loadedAuto.coversFetchTime || loadedAuto.fetchTime || "09:30",
+        salesFetchTime: loadedAuto.salesFetchTime || "10:30"
       });
       setReportLogs(logs || []);
       if (mailer) {
@@ -1227,16 +1236,43 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                         <p className="text-[10px] text-slate-400 ml-1">Leave all unchecked to include all stores by default.</p>
                       </div>
 
-                      <div className="space-y-2 animate-fadeIn">
-                        <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
-                          Report Distribution Time (Dubai Time / UTC+4)
-                        </label>
-                        <input
-                          type="time"
-                          value={autoSettings.fetchTime}
-                          onChange={(e) => setAutoSettings({ ...autoSettings, fetchTime: e.target.value })}
-                          className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
-                        />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-fadeIn">
+                        {autoSettings.reportTypes.includes("Covers") && (
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 flex items-center justify-between">
+                              <span>Covers Distribution Time</span>
+                              <span className="text-slate-400 font-normal">(Dubai UTC+4)</span>
+                            </label>
+                            <input
+                              type="time"
+                              value={autoSettings.coversFetchTime || "09:30"}
+                              onChange={(e) => setAutoSettings({ 
+                                ...autoSettings, 
+                                coversFetchTime: e.target.value,
+                                fetchTime: e.target.value
+                              })}
+                              className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
+                            />
+                          </div>
+                        )}
+
+                        {autoSettings.reportTypes.includes("Sales") && (
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 flex items-center justify-between">
+                              <span>Sales Distribution Time</span>
+                              <span className="text-slate-400 font-normal">(Dubai UTC+4)</span>
+                            </label>
+                            <input
+                              type="time"
+                              value={autoSettings.salesFetchTime || "10:30"}
+                              onChange={(e) => setAutoSettings({ 
+                                ...autoSettings, 
+                                salesFetchTime: e.target.value 
+                              })}
+                              className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
+                            />
+                          </div>
+                        )}
                       </div>
                     </>
                   )}
