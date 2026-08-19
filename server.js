@@ -765,17 +765,23 @@ async function getActiveStores() {
 }
 
 async function getAutomationSettingsBackend() {
-  try {
-    const docRef = doc(db, 'configs', 'cover_tracker_automation');
-    const snapshot = await getDoc(docRef);
-    if (snapshot.exists()) {
-      return snapshot.data();
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const docRef = doc(db, 'configs', 'cover_tracker_automation');
+      const snapshot = await getDoc(docRef);
+      if (snapshot.exists()) {
+        return snapshot.data();
+      }
+      return { enabled: true, fetchTime: "09:30" };
+    } catch (err) {
+      console.warn(`[Firestore Settings Warning] Attempt ${attempt}/3 failed to fetch automation settings:`, err.message);
+      if (attempt < 3) {
+        await new Promise(r => setTimeout(r, attempt * 300));
+      }
     }
-    return { enabled: true, fetchTime: "08:00" };
-  } catch (err) {
-    console.error("Failed to fetch automation settings from Firestore, using default:", err);
-    return { enabled: true, fetchTime: "08:00" };
   }
+  console.error("Failed to fetch automation settings from Firestore after 3 attempts, using default fallback.");
+  return { enabled: true, fetchTime: "09:30" };
 }
 
 async function saveHybridDailyRecord(storeId, dateStrIso, salesData, summaryData) {
@@ -1889,17 +1895,23 @@ async function generateSalesExcelBuffer(trendData, totals, selectedDate, anchorD
 }
 
 async function getMailerSettingsBackend() {
-  try {
-    const docRef = doc(db, 'configs', 'mailer_settings');
-    const snapshot = await getDoc(docRef);
-    if (snapshot.exists()) {
-      return snapshot.data();
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const docRef = doc(db, 'configs', 'mailer_settings');
+      const snapshot = await getDoc(docRef);
+      if (snapshot.exists()) {
+        return snapshot.data();
+      }
+      return null;
+    } catch (err) {
+      console.warn(`[Firestore Mailer Warning] Attempt ${attempt}/3 failed to fetch mailer settings:`, err.message);
+      if (attempt < 3) {
+        await new Promise(r => setTimeout(r, attempt * 300));
+      }
     }
-    return null;
-  } catch (err) {
-    console.error("Failed to fetch mailer settings from Firestore on backend, fallback to env:", err.message);
-    return null;
   }
+  console.error("Failed to fetch mailer settings from Firestore after 3 attempts, fallback to env.");
+  return null;
 }
 
 async function getOrCreateSubfolder(drive, parentId, folderName) {
