@@ -276,9 +276,11 @@ export const fetchDashboardData = async (
 
       // --- De-duplicate Discounts ---
       if (Array.isArray(discountData)) {
-        discountData.forEach((d: DiscountDetail) => {
-          // Create a unique key for the discount record (Ticket# + DiscountName + Amount)
-          const dKey = `${d.check}_${d.discountName}_${d.discountAmtStr}`;
+        discountData.forEach((d: DiscountDetail, itemIdx: number) => {
+          // Use robust key including id, date, ticket#, discount name, amount and chunk item index
+          const dKey = d.id && d.id !== ""
+            ? `${d.id}`
+            : `${i}_${itemIdx}_${d.check}_${d.date || ""}_${d.discountName || ""}_${d.discountAmtStr || ""}_${d.menuItems || ""}`;
           if (!seenDiscountIds.has(dKey)) {
             seenDiscountIds.add(dKey);
             aggregate.saleDetails.push(d);
