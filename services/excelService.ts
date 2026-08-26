@@ -89,6 +89,11 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
     (item) => item.check !== "Total",
   );
 
+  // Helper to normalize ticket/check strings (removes spaces, hyphens, non-alphanumeric)
+  const normalizeTicket = (t: string | undefined | null): string => {
+    return String(t || "").replace(/[^a-zA-Z0-9]/g, "").trim().toLowerCase();
+  };
+
   // Helper function to normalize any date format (e.g. "17-AUG-2026", "2026-08-17T23:18:00Z", "17/08/2026") into "YYYY-MM-DD"
   const normalizeDateToYMD = (dateStr: string): string => {
     if (!dateStr) return "";
@@ -150,51 +155,67 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
 
     if (item.check) {
       const discountGrossSales = parseNum(item.grossSalesStr);
+      const discountAmount = parseNum(item.discountAmtStr);
+      const normCheck = normalizeTicket(item.check);
 
-      // 1. Primary match: Match sale by Ticket # AND exact normalized Date
-      let potentialMatches = data.sales.filter((s) => {
-        if (s.ticketNo !== item.check) return false;
-        if (!s.startDate) return false;
-        const saleDatePart = normalizeDateToYMD(s.startDate);
-        return saleDatePart === discountDatePart;
-      });
+      // Find all sales matching this ticket number (normalizing spaces, hyphens, etc.)
+      const candidateSales = data.sales.filter(
+        (s) => normalizeTicket(s.ticketNo) === normCheck
+      );
 
-      // 2. If multiple sales on the exact same ticket & date, match by closest gross amount
-      if (potentialMatches.length > 1) {
-        potentialMatches = [
-          potentialMatches.find((s) => {
-            const saleGrossReceipt = parseNum(s.grossReceiptStr);
-            if (saleGrossReceipt === discountGrossSales) return true;
-            const divisor = saleGrossReceipt === 0 ? 1 : saleGrossReceipt;
-            return (
-              Math.abs(saleGrossReceipt - discountGrossSales) < divisor * 0.02
-            );
-          }) || potentialMatches[0],
-        ];
-      }
+      if (candidateSales.length === 1) {
+        const s = candidateSales[0];
+        saleOpenTime = s.saleOpenTime || "Unknown";
+        if (s.startDate) resolvedDateYMD = normalizeDateToYMD(s.startDate);
+      } else if (candidateSales.length > 1) {
+        // Multi-factor scoring to unambiguously match the exact sale:
+        let bestSale = candidateSales[0];
+        let bestScore = -1;
 
-      // 3. Fallback: If no sale found on exact date, match by ticketNo and closest gross amount
-      if (potentialMatches.length === 0) {
-        const ticketMatches = data.sales.filter((s) => s.ticketNo === item.check);
-        if (ticketMatches.length > 0) {
-          potentialMatches = [
-            ticketMatches.find((s) => {
-              const saleGrossReceipt = parseNum(s.grossReceiptStr);
-              if (saleGrossReceipt === discountGrossSales) return true;
-              const divisor = saleGrossReceipt === 0 ? 1 : saleGrossReceipt;
-              return (
-                Math.abs(saleGrossReceipt - discountGrossSales) < divisor * 0.02
-              );
-            }) || ticketMatches[0],
-          ];
+        for (const s of candidateSales) {
+          let score = 0;
+          const sDateYMD = normalizeDateToYMD(s.startDate);
+          const sGross = parseNum(s.grossReceiptStr);
+          const summary = data.saleSummary.find((sum) => sum.id === s.id);
+          const sDiscount = parseNum(summary?.discounts);
+          const closedBy = data.users.find((u) => u.id === s.saleCloseEmployee)?.name || "";
+          const createdBy = data.users.find((u) => u.id === s.employee)?.name || "";
+
+          // 1. Exact or Close Gross Receipt / Sales match (+50 points)
+          if (discountGrossSales > 0 && Math.abs(sGross - discountGrossSales) < 0.05) {
+            score += 50;
+          } else if (discountGrossSales > 0 && Math.abs(sGross - discountGrossSales) < (discountGrossSales * 0.05)) {
+            score += 30;
+          }
+
+          // 2. Exact or Close Discount Amount match (+40 points)
+          if (discountAmount > 0 && Math.abs(sDiscount - discountAmount) < 0.05) {
+            score += 40;
+          }
+
+          // 3. Approver / Employee match (+20 points)
+          if (item.approvedBy && item.approvedBy !== "-" && (
+            closedBy.toLowerCase().includes(item.approvedBy.toLowerCase().trim()) ||
+            item.approvedBy.toLowerCase().includes(closedBy.toLowerCase().trim()) ||
+            createdBy.toLowerCase().includes(item.approvedBy.toLowerCase().trim())
+          )) {
+            score += 20;
+          }
+
+          // 4. Date match (+15 points)
+          if (discountDatePart && sDateYMD === discountDatePart) {
+            score += 15;
+          }
+
+          if (score > bestScore) {
+            bestScore = score;
+            bestSale = s;
+          }
         }
-      }
 
-      if (potentialMatches.length > 0) {
-        const matchedSale = potentialMatches[0];
-        saleOpenTime = matchedSale.saleOpenTime || "Unknown";
-        if (matchedSale.startDate) {
-          resolvedDateYMD = normalizeDateToYMD(matchedSale.startDate);
+        saleOpenTime = bestSale.saleOpenTime || "Unknown";
+        if (bestSale.startDate) {
+          resolvedDateYMD = normalizeDateToYMD(bestSale.startDate);
         }
       }
     }
@@ -249,10 +270,11 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
 
   data.saleDetails.forEach((detail) => {
     if (detail.check) {
-      saleDetailsByTicket.set(detail.check, detail);
+      const normCheck = normalizeTicket(detail.check);
+      saleDetailsByTicket.set(normCheck, detail);
       if (detail.date) {
         const detailDatePart = normalizeDateToYMD(detail.date);
-        const compositeKey = `${detail.check}_${detailDatePart}`;
+        const compositeKey = `${normCheck}_${detailDatePart}`;
         saleDetailsByTicketAndDate.set(compositeKey, detail);
       }
     }
@@ -273,14 +295,15 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
     // Match discount by composite key (ticketNo + date) with ticket ID fallback
     let discountName = "N/A";
     if (item.saleId) {
+      const normSaleId = normalizeTicket(item.saleId);
       let matchedDetail: (typeof data.saleDetails)[0] | undefined;
       if (item.saleDate) {
         const menuItemDatePart = normalizeDateToYMD(item.saleDate);
-        const compositeKey = `${item.saleId}_${menuItemDatePart}`;
+        const compositeKey = `${normSaleId}_${menuItemDatePart}`;
         matchedDetail = saleDetailsByTicketAndDate.get(compositeKey);
       }
       if (!matchedDetail) {
-        matchedDetail = saleDetailsByTicket.get(item.saleId);
+        matchedDetail = saleDetailsByTicket.get(normSaleId);
       }
       if (matchedDetail && matchedDetail.discountName) {
         discountName = matchedDetail.discountName;
