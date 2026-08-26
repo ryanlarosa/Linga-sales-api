@@ -89,34 +89,24 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
     (item) => item.check !== "Total",
   );
 
-  // Helper function to parse discount date format (e.g., "28-Apr-2026")
-  const parseDiscountDate = (dateStr: string): string => {
+  // Helper function to normalize any date format (e.g. "17-AUG-2026", "2026-08-17T23:18:00Z", "17/08/2026") into "YYYY-MM-DD"
+  const normalizeDateToYMD = (dateStr: string): string => {
     if (!dateStr) return "";
+    const clean = String(dateStr).trim().replace(/\//g, "-");
 
-    // If it's an ISO timestamp or date with T, split it
-    if (dateStr.includes("T")) {
-      return dateStr.split("T")[0];
+    // If it's an ISO timestamp or has T
+    if (clean.includes("T")) {
+      const parsed = new Date(clean);
+      if (!isNaN(parsed.getTime())) {
+        const yyyy = parsed.getFullYear();
+        const mm = String(parsed.getMonth() + 1).padStart(2, "0");
+        const dd = String(parsed.getDate()).padStart(2, "0");
+        return `${yyyy}-${mm}-${dd}`;
+      }
+      return clean.split("T")[0];
     }
 
-    const months: Record<string, string> = {
-      Jan: "01",
-      Feb: "02",
-      Mar: "03",
-      Apr: "04",
-      May: "05",
-      Jun: "06",
-      Jul: "07",
-      Aug: "08",
-      Sep: "09",
-      Oct: "10",
-      Nov: "11",
-      Dec: "12",
-    };
-
-    // Replace slashes with dashes
-    const normalized = dateStr.replace(/\//g, "-");
-    const parts = normalized.split("-");
-
+    const parts = clean.split("-");
     if (parts.length === 3) {
       const p0 = parts[0].trim();
       const p1 = parts[1].trim();
@@ -127,75 +117,109 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
         return `${p0}-${p1.padStart(2, "0")}-${p2.padStart(2, "0")}`;
       }
 
-      // Case 2: DD-MMM-YYYY (e.g. 28-Apr-2026)
-      if (isNaN(Number(p1))) {
-        const monthVal = months[p1] || "01";
-        return `${p2}-${monthVal}-${p0.padStart(2, "0")}`;
+      // Case 2: DD-MMM-YYYY (e.g. 17-AUG-2026, 17-Aug-2026)
+      const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+      const mIdx = months.findIndex((m) => m === p1.toUpperCase().replace(/\./g, ""));
+      if (mIdx > -1) {
+        const mm = String(mIdx + 1).padStart(2, "0");
+        const dd = p0.padStart(2, "0");
+        return `${p2}-${mm}-${dd}`;
       }
 
-      // Case 3: DD-MM-YYYY (e.g. 06-11-2025)
-      return `${p2}-${p1.padStart(2, "0")}-${p0.padStart(2, "0")}`;
+      // Case 3: DD-MM-YYYY (e.g. 17-08-2026)
+      if (p2.length === 4) {
+        return `${p2}-${p1.padStart(2, "0")}-${p0.padStart(2, "0")}`;
+      }
     }
 
-    return dateStr;
+    const parsed = new Date(clean);
+    if (!isNaN(parsed.getTime())) {
+      const yyyy = parsed.getFullYear();
+      const mm = String(parsed.getMonth() + 1).padStart(2, "0");
+      const dd = String(parsed.getDate()).padStart(2, "0");
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    return clean;
   };
 
   const discountData = filteredDiscountData.map((item) => {
     let saleOpenTime = "Unknown";
-    let saleDate = "Unknown";
+    const discountDatePart = normalizeDateToYMD(item.date);
+    let resolvedDateYMD = discountDatePart;
 
-    if (item.check && item.date) {
-      // Parse discount date to ISO format (YYYY-MM-DD)
-      const discountDatePart = parseDiscountDate(item.date);
+    if (item.check) {
       const discountGrossSales = parseNum(item.grossSalesStr);
 
-      // Get all sales with matching ticket number and date first to avoid matching wrong dates on reused tickets
+      // 1. Primary match: Match sale by Ticket # AND exact normalized Date
       let potentialMatches = data.sales.filter((s) => {
         if (s.ticketNo !== item.check) return false;
-        if (!s.startDate) return true; // Fallback if no date on sale
-        const saleDatePart = s.startDate.split("T")[0];
+        if (!s.startDate) return false;
+        const saleDatePart = normalizeDateToYMD(s.startDate);
         return saleDatePart === discountDatePart;
       });
 
-      // Fallback: match by ticket number only if no exact date match
-      if (potentialMatches.length === 0) {
-        potentialMatches = data.sales.filter((s) => s.ticketNo === item.check);
+      // 2. If multiple sales on the exact same ticket & date, match by closest gross amount
+      if (potentialMatches.length > 1) {
+        potentialMatches = [
+          potentialMatches.find((s) => {
+            const saleGrossReceipt = parseNum(s.grossReceiptStr);
+            if (saleGrossReceipt === discountGrossSales) return true;
+            const divisor = saleGrossReceipt === 0 ? 1 : saleGrossReceipt;
+            return (
+              Math.abs(saleGrossReceipt - discountGrossSales) < divisor * 0.02
+            );
+          }) || potentialMatches[0],
+        ];
       }
 
-      if (potentialMatches.length > 0) {
-        let matchedSale = potentialMatches[0];
-
-        // If there's more than one potential sale match, match by amount
-        if (potentialMatches.length > 1) {
-          // Try to find a sale where grossReceiptStr matches grossSalesStr (within tolerance)
-          matchedSale =
-            potentialMatches.find((s) => {
+      // 3. Fallback: If no sale found on exact date, match by ticketNo and closest gross amount
+      if (potentialMatches.length === 0) {
+        const ticketMatches = data.sales.filter((s) => s.ticketNo === item.check);
+        if (ticketMatches.length > 0) {
+          potentialMatches = [
+            ticketMatches.find((s) => {
               const saleGrossReceipt = parseNum(s.grossReceiptStr);
               if (saleGrossReceipt === discountGrossSales) return true;
-              // Check if the amounts are close (within 2% tolerance)
               const divisor = saleGrossReceipt === 0 ? 1 : saleGrossReceipt;
               return (
                 Math.abs(saleGrossReceipt - discountGrossSales) < divisor * 0.02
               );
-            }) || potentialMatches[0];
+            }) || ticketMatches[0],
+          ];
         }
+      }
 
-        saleOpenTime = matchedSale.saleOpenTime;
-        saleDate = matchedSale.startDate;
+      if (potentialMatches.length > 0) {
+        const matchedSale = potentialMatches[0];
+        saleOpenTime = matchedSale.saleOpenTime || "Unknown";
+        if (matchedSale.startDate) {
+          resolvedDateYMD = normalizeDateToYMD(matchedSale.startDate);
+        }
       }
     }
 
-    const saleDateObj = new Date(saleDate);
-    const day = String(saleDateObj.getDate()).padStart(2, "0");
-    const month = String(saleDateObj.getMonth() + 1).padStart(2, "0");
-    const year = saleDateObj.getFullYear();
-    const formattedDate = `${day}-${month}-${year}`;
+    // Format resolved date to DD-MM-YYYY
+    let formattedDate = "Unknown";
+    if (resolvedDateYMD) {
+      const parts = resolvedDateYMD.split("-");
+      if (parts.length === 3) {
+        formattedDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+      } else {
+        const dObj = new Date(resolvedDateYMD);
+        if (!isNaN(dObj.getTime())) {
+          const dd = String(dObj.getDate()).padStart(2, "0");
+          const mm = String(dObj.getMonth() + 1).padStart(2, "0");
+          const yyyy = dObj.getFullYear();
+          formattedDate = `${dd}-${mm}-${yyyy}`;
+        }
+      }
+    }
 
     return {
       Store: selectedStoreName,
       Approved_By: item.approvedBy,
       Check: item.check, // Mapped to Link to Ticket
-      //Date: item.date,
       SaleDate: formattedDate,
       Sale_Open_Time: saleOpenTime,
       Discount_Amount: parseNum(item.discountAmtStr),
@@ -213,30 +237,6 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
     };
   });
 
-  const normalizeDateStr = (str: string): string => {
-    if (!str) return "";
-    const strClean = String(str).trim();
-    const parsed = new Date(strClean);
-    if (!isNaN(parsed.getTime())) {
-      const yyyy = parsed.getFullYear();
-      const mm = String(parsed.getMonth() + 1).padStart(2, "0");
-      const dd = String(parsed.getDate()).padStart(2, "0");
-      return `${yyyy}-${mm}-${dd}`;
-    }
-    const parts = strClean.split("-");
-    if (parts.length === 3) {
-      const day = parts[0].padStart(2, "0");
-      const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
-      const mIdx = months.findIndex(m => m === parts[1].toUpperCase());
-      if (mIdx > -1) {
-        const month = String(mIdx + 1).padStart(2, "0");
-        const year = parts[2];
-        return `${year}-${month}-${day}`;
-      }
-    }
-    return strClean.split("T")[0];
-  };
-
   // Create maps for saleDetails by composite key & by check ID for MenuItem matching
   const saleDetailsByTicketAndDate = new Map<
     string,
@@ -251,7 +251,7 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
     if (detail.check) {
       saleDetailsByTicket.set(detail.check, detail);
       if (detail.date) {
-        const detailDatePart = normalizeDateStr(detail.date);
+        const detailDatePart = normalizeDateToYMD(detail.date);
         const compositeKey = `${detail.check}_${detailDatePart}`;
         saleDetailsByTicketAndDate.set(compositeKey, detail);
       }
@@ -275,7 +275,7 @@ export const exportToExcel = (data: FetchedData, storeName: string) => {
     if (item.saleId) {
       let matchedDetail: (typeof data.saleDetails)[0] | undefined;
       if (item.saleDate) {
-        const menuItemDatePart = normalizeDateStr(item.saleDate);
+        const menuItemDatePart = normalizeDateToYMD(item.saleDate);
         const compositeKey = `${item.saleId}_${menuItemDatePart}`;
         matchedDetail = saleDetailsByTicketAndDate.get(compositeKey);
       }
