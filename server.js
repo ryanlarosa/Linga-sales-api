@@ -730,7 +730,9 @@ async function getAllStores() {
         id: storeId, 
         name: data.name || doc.id, 
         brand: data.brand || "", 
-        active: data.active !== false 
+        active: data.active !== false,
+        reportRecipients: data.reportRecipients || "",
+        venueEmailEnabled: data.venueEmailEnabled !== false
       });
     });
     return stores.length > 0 ? stores : DEFAULT_STORES;
@@ -753,7 +755,9 @@ async function getActiveStores() {
           id: storeId, 
           name: data.name || doc.id, 
           brand: data.brand || "", 
-          active: data.active !== false 
+          active: data.active !== false,
+          reportRecipients: data.reportRecipients || "",
+          venueEmailEnabled: data.venueEmailEnabled !== false
         });
       }
     });
@@ -2320,6 +2324,239 @@ async function sendEmailReport(fileBuffer, fileName, selectedDate, mailerSetting
   return true;
 }
 
+async function fetchStoreUsersMap(storeId) {
+  try {
+    const url = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${storeId}/users`;
+    const res = await callExternalApi(url).catch(() => null);
+    const usersMap = {};
+    if (Array.isArray(res?.data)) {
+      res.data.forEach(u => {
+        if (u.id) usersMap[u.id] = u.name || u.userName || u.id;
+      });
+    }
+    return usersMap;
+  } catch (e) {
+    return {};
+  }
+}
+
+async function generateVenueSalesExcelBuffer(storeName, rawSalesData, selectedDate) {
+  const workbook = new ExcelJS.Workbook();
+  const dataSheet = workbook.addWorksheet('SalesData');
+  dataSheet.views = [{ showGridLines: true }];
+
+  dataSheet.columns = [
+    { header: 'Store', key: 'store', width: 25 },
+    { header: 'Ticket_No', key: 'ticket', width: 14 },
+    { header: 'Customer_Name', key: 'customer', width: 22 },
+    { header: 'Sale_Open_Time', key: 'openTime', width: 16 },
+    { header: 'Floor', key: 'floor', width: 14 },
+    { header: 'Table_No', key: 'table', width: 14 },
+    { header: 'Net_Sales', key: 'netSales', width: 14 },
+    { header: 'Total_Tax', key: 'tax', width: 14 },
+    { header: 'Discount', key: 'discount', width: 14 },
+    { header: 'Gross_Receipt', key: 'gross', width: 14 },
+    { header: 'Closed_By', key: 'closedBy', width: 18 },
+    { header: 'Server_Name', key: 'serverName', width: 18 },
+    { header: 'Guest_Count', key: 'guests', width: 12 },
+    { header: 'Final_SaleDate', key: 'finalSaleDate', width: 16 }
+  ];
+
+  const dataHeaderCells = ['A1', 'B1', 'C1', 'D1', 'E1', 'F1', 'G1', 'H1', 'I1', 'J1', 'K1', 'L1', 'M1', 'N1'];
+  dataHeaderCells.forEach(cellRef => {
+    const cell = dataSheet.getCell(cellRef);
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+    cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+  });
+
+  const parseFloatVal = (val) => {
+    if (typeof val === 'number') return val;
+    if (!val) return 0;
+    const clean = String(val).replace(/[$,\s]/g, '');
+    const num = parseFloat(clean);
+    return isNaN(num) ? 0 : num;
+  };
+
+  const formatToDDMMYYYY = (dStr) => {
+    if (!dStr) return "";
+    const parts = String(dStr).split(/[-/]/);
+    if (parts.length === 3) {
+      if (parts[0].length === 4) { // YYYY-MM-DD
+        return `${parts[2].padStart(2, '0')}-${parts[1].padStart(2, '0')}-${parts[0]}`;
+      }
+      return `${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}-${parts[2]}`;
+    }
+    return dStr;
+  };
+
+  const finalDateDisplay = formatToDDMMYYYY(selectedDate);
+
+  rawSalesData.forEach((sale) => {
+    const saleRow = dataSheet.addRow([
+      storeName,
+      sale.ticketNo,
+      sale.customerName || 'Walkin',
+      sale.saleOpenTime,
+      sale.floorNo || 'Unknown',
+      sale.tableNo || 'Unknown',
+      parseFloatVal(sale.netSalesVal),
+      parseFloatVal(sale.taxVal),
+      parseFloatVal(sale.discountVal),
+      parseFloatVal(sale.grossReceiptStr),
+      sale.closedBy || 'Unknown',
+      sale.serverName || 'Unknown',
+      sale.guestCount || 0,
+      finalDateDisplay
+    ]);
+
+    for (let col = 7; col <= 10; col++) {
+      const cell = saleRow.getCell(col);
+      cell.numFmt = '#,##0.00';
+      cell.alignment = { horizontal: 'right' };
+    }
+    saleRow.getCell(13).numFmt = '#,##0';
+    saleRow.getCell(13).alignment = { horizontal: 'right' };
+  });
+
+  return await workbook.xlsx.writeBuffer();
+}
+
+function buildVenueHtmlReport(storeData, selectedDate, anchorDates, reportType = "Sales", customBody = "") {
+  const isCovers = reportType === "Covers";
+  const fmtActual = (val) => (val === 0 || !val) ? "-" : Math.round(val).toLocaleString();
+  const fmtVariance = (val) => {
+    if (val === 0 || isNaN(val)) return "-";
+    const rounded = Math.round(val);
+    const sign = rounded > 0 ? "+" : "";
+    return `${sign}${rounded.toLocaleString()}`;
+  };
+
+  const getStyledVarTd = (val) => {
+    if (val === 0 || isNaN(val)) {
+      return `<td style="padding: 6px 10px; border: 1px solid #CBD5E1; text-align: right; color: #64748B;">-</td>`;
+    }
+    const isPos = val > 0;
+    const bg = isPos ? "#D1FAE5" : "#FEE2E2";
+    const color = isPos ? "#065F46" : "#991B1B";
+    return `<td style="padding: 6px 10px; border: 1px solid #CBD5E1; text-align: right; background-color: ${bg}; color: ${color}; font-weight: bold;">${fmtVariance(val)}</td>`;
+  };
+
+  const thisWk = storeData.thisWk || 0;
+  const lastWk = storeData.lastWk || 0;
+  const lastMth = storeData.lastMth || 0;
+  const lastYr = storeData.lastYr || 0;
+  const varLw = thisWk - lastWk;
+  const varLm = thisWk - lastMth;
+  const varLy = thisWk - lastYr;
+
+  const formatDateDisplay = (d) => {
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const month = months[d.getUTCMonth()];
+    const yr = String(d.getUTCFullYear()).slice(-2);
+    return `${day}-${month}-${yr}`;
+  };
+
+  const headerDateThisWk = anchorDates?.[0] ? formatDateDisplay(anchorDates[0]) : "This Wk";
+  const headerDateLastWk = anchorDates?.[1] ? formatDateDisplay(anchorDates[1]) : "Last Wk";
+  const headerDateLastMth = anchorDates?.[2] ? formatDateDisplay(anchorDates[2]) : "Last Mth";
+  const headerDateLastYr = anchorDates?.[3] ? formatDateDisplay(anchorDates[3]) : "Last Yr";
+
+  const interpolatedBody = customBody ? customBody.replace(/\n/g, '<br/>') : '';
+
+  let html = `
+  <div style="font-family: Arial, sans-serif; font-size: 13px; color: #1E293B; line-height: 1.5; max-width: 800px; margin: 0 auto;">
+    <div style="margin-bottom: 16px;">
+      <h2 style="margin: 0 0 4px 0; color: #0F172A; font-size: 18px;">${storeData.storeName} - Daily ${reportType} Report</h2>
+      <p style="margin: 0; font-size: 12px; color: #64748B;">Date: <strong>${selectedDate}</strong></p>
+    </div>
+
+    ${interpolatedBody ? `<div style="margin-bottom: 16px; padding: 12px 16px; background-color: #F8FAFC; border-left: 4px solid #E11D48; border-radius: 4px;">${interpolatedBody}</div>` : ''}
+
+    <table style="border-collapse: collapse; width: 100%; font-size: 12px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+      <thead>
+        <tr style="background-color: #0F172A; color: #FFFFFF;">
+          <th style="padding: 8px 10px; border: 1px solid #334155; text-align: left;">Venue</th>
+          <th style="padding: 8px 10px; border: 1px solid #334155; text-align: right;">${headerDateThisWk}</th>
+          <th style="padding: 8px 10px; border: 1px solid #334155; text-align: right;">${headerDateLastWk}</th>
+          <th style="padding: 8px 10px; border: 1px solid #334155; text-align: right;">${headerDateLastMth}</th>
+          <th style="padding: 8px 10px; border: 1px solid #334155; text-align: right;">${headerDateLastYr}</th>
+          <th style="padding: 8px 10px; border: 1px solid #334155; text-align: right;">WoW</th>
+          <th style="padding: 8px 10px; border: 1px solid #334155; text-align: right;">MoM</th>
+          <th style="padding: 8px 10px; border: 1px solid #334155; text-align: right;">YoY</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="font-weight: bold; color: #0F172A; background-color: #FFFFFF;">
+          <td style="padding: 8px 10px; border: 1px solid #CBD5E1; text-align: left;">${storeData.storeName}</td>
+          <td style="padding: 8px 10px; border: 1px solid #CBD5E1; text-align: right;">${fmtActual(thisWk)}</td>
+          <td style="padding: 8px 10px; border: 1px solid #CBD5E1; text-align: right;">${fmtActual(lastWk)}</td>
+          <td style="padding: 8px 10px; border: 1px solid #CBD5E1; text-align: right;">${fmtActual(lastMth)}</td>
+          <td style="padding: 8px 10px; border: 1px solid #CBD5E1; text-align: right;">${fmtActual(lastYr)}</td>
+          ${getStyledVarTd(varLw)}
+          ${getStyledVarTd(varLm)}
+          ${getStyledVarTd(varLy)}
+        </tr>
+      </tbody>
+    </table>
+
+    <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px;">
+      <p style="margin: 0; font-size: 12px; color: #475569;">
+        📎 <strong>Attachment:</strong> Attached is your detailed <code>SalesData</code> Excel sheet for <strong>${storeData.storeName}</strong>.
+      </p>
+    </div>
+
+    <p style="margin: 0; font-size: 11px; color: #94A3B8;">
+      This is an automated performance report generated by Linga Analytics.
+    </p>
+  </div>
+  `;
+
+  return html;
+}
+
+async function sendVenueEmailReport(fileBuffer, fileName, selectedDate, mailerSettings, reportType, storeData, anchorDates, recipients, storeName) {
+  const host = mailerSettings?.smtpHost || process.env.SMTP_HOST;
+  const port = parseInt(mailerSettings?.smtpPort || process.env.SMTP_PORT || '587');
+  const user = mailerSettings?.smtpUser || process.env.SMTP_USER;
+  const pass = mailerSettings?.smtpPass || process.env.SMTP_PASS;
+  const senderName = mailerSettings?.senderName || "Linga Reports";
+
+  if (!host || !user || !pass || !recipients) {
+    console.warn(`[Venue Email] Missing SMTP settings or recipients for ${storeName}. Skipping.`);
+    return false;
+  }
+
+  const transporter = nodemailer.createTransport({
+    host,
+    port,
+    secure: port === 465,
+    auth: { user, pass }
+  });
+
+  const subject = `[${storeName}] Daily ${reportType} Report - ${selectedDate}`;
+  const htmlContent = buildVenueHtmlReport(storeData, selectedDate, anchorDates, reportType);
+
+  const mailOptions = {
+    from: `"${senderName}" <${user}>`,
+    to: recipients,
+    subject: subject,
+    text: `Attached is the daily ${reportType} report for ${storeName} on ${selectedDate}.`,
+    html: htmlContent,
+    attachments: [
+      {
+        filename: fileName,
+        content: fileBuffer
+      }
+    ]
+  };
+
+  const info = await transporter.sendMail(mailOptions);
+  console.log(`[Venue Email] Sent successfully to ${recipients} for ${storeName}:`, info.messageId);
+  return true;
+}
+
 async function writeReportLogBackend({ type, reportType, reportDate, status, recipients, driveLink, errorMsg }) {
   try {
     
@@ -2941,6 +3178,114 @@ async function runDailyAutomation(isManualTest = false) {
         });
         }
         }
+
+        // --- Individual Venue Email Distribution (Sales Data) ---
+        console.log("[Cron-Venue] Starting individual venue distribution...");
+        const venueStores = filteredStores.filter(s => s.venueEmailEnabled !== false && s.reportRecipients && s.reportRecipients.trim() !== "");
+        for (const store of venueStores) {
+          try {
+            const venueLogType = `Sales - ${store.name}`;
+            const alreadySent = !isManualTest && (await isReportAlreadySentTodayBackend(venueLogType, selectedDate));
+            if (alreadySent) {
+              console.log(`[Cron-Venue Deduplication] Skipping ${venueLogType} for ${selectedDate}: Already sent today.`);
+              resultsSummary.reportsRun.push({
+                type: venueLogType,
+                skipped: true,
+                reason: "Already sent today"
+              });
+              continue;
+            }
+
+            console.log(`[Cron-Venue] Processing venue report for ${store.name}...`);
+            const usersMap = await fetchStoreUsersMap(store.id);
+            const formatDateParam = (d) => {
+              const day = String(d.getUTCDate()).padStart(2, '0');
+              const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+              const month = months[d.getUTCMonth()];
+              const year = d.getUTCFullYear();
+              return `${day}-${month}-${year}`;
+            };
+            const formattedParam = formatDateParam(anchorDates[0]);
+            const salesUrl = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${store.id}/getsale`;
+            const summaryUrl = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${store.id}/saleSummaryReport`;
+
+            const [salesRes, summaryRes] = await Promise.all([
+              callExternalApi(salesUrl, { fromDate: formattedParam, toDate: formattedParam }).catch(() => ({ data: { sales: [] } })),
+              callExternalApi(summaryUrl, { dateOption: 'DR', fromDate: formattedParam, toDate: formattedParam }).catch(() => ({ data: [] }))
+            ]);
+
+            const salesData = salesRes?.data;
+            const summaryData = summaryRes?.data;
+            const salesList = [];
+
+            if (salesData?.sales) {
+              salesData.sales.forEach((sale) => {
+                const summary = Array.isArray(summaryData) ? summaryData.find((s) => s.id === sale.id) : null;
+                const netSales = parseFloatVal(summary?.netSales || sale.netSalesStr);
+                const discounts = parseFloatVal(summary?.discounts || 0);
+
+                if (netSales > 0 || discounts > 0) {
+                  const closedBy = sale.saleCloseEmployee ? (usersMap[sale.saleCloseEmployee] || sale.saleCloseEmployee) : 'Unknown';
+                  const serverName = sale.employee ? (usersMap[sale.employee] || sale.employee) : 'Unknown';
+                  salesList.push({
+                    ticketNo: sale.ticketNo,
+                    customerName: sale.customerName || 'Walkin',
+                    saleOpenTime: sale.saleOpenTime,
+                    floorNo: summary?.floorNo || 'Unknown',
+                    tableNo: summary?.tableNo || 'Unknown',
+                    netSalesVal: netSales,
+                    taxVal: parseFloatVal(summary?.totalTaxAmount || sale.totalTaxAmountStr),
+                    discountVal: discounts,
+                    grossReceiptStr: sale.grossReceiptStr,
+                    closedBy: closedBy,
+                    serverName: serverName,
+                    guestCount: sale.guestCount
+                  });
+                }
+              });
+            }
+
+            const storeTrend = trendData.find(t => t.storeId === store.id) || {
+              storeId: store.id,
+              storeName: store.name,
+              thisWk: 0,
+              lastWk: 0,
+              lastMth: 0,
+              lastYr: 0
+            };
+
+            const venueExcelBuffer = await generateVenueSalesExcelBuffer(store.name, salesList, selectedDate);
+            const venueFileName = `${store.name.replace(/[^a-zA-Z0-9_-]/g, '_')}_Sales_Data_${selectedDate}.xlsx`;
+            const venueRecipients = (isManualTest && mailerSettings?.testRecipients) ? mailerSettings.testRecipients : store.reportRecipients;
+
+            let venueEmailResult = false;
+            let venueEmailError = null;
+            try {
+              venueEmailResult = await sendVenueEmailReport(venueExcelBuffer, venueFileName, selectedDate, mailerSettings, "Sales", storeTrend, anchorDates, venueRecipients, store.name);
+            } catch (err) {
+              console.error(`[Cron-Venue] Email send failed for ${store.name}:`, err.message);
+              venueEmailError = err.message;
+            }
+
+            await writeReportLogBackend({
+              type: isManualTest ? "Manual" : "Automated",
+              reportType: venueLogType,
+              reportDate: selectedDate,
+              status: venueEmailResult ? "SUCCESS" : "FAILED",
+              recipients: venueRecipients,
+              driveLink: null,
+              errorMsg: venueEmailError
+            });
+
+            resultsSummary.reportsRun.push({
+              type: venueLogType,
+              emailSent: venueEmailResult,
+              recipients: venueRecipients
+            });
+          } catch (venueErr) {
+            console.error(`[Cron-Venue] Processing error for ${store.name}:`, venueErr.message);
+          }
+        }
     }
 
     return resultsSummary;
@@ -2973,6 +3318,110 @@ app.post('/api/v1/cron/test-automation', checkAuth, async (req, res) => {
         res.json({ success: true, ...summary });
     } catch (error) {
         console.error("[Manual Cron Trigger] Execution error:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// --- Test Single Venue Email Route ---
+app.post('/api/v1/cron/test-venue/:storeId', checkAuth, async (req, res) => {
+    try {
+        const { storeId } = req.params;
+        const allStores = await getAllStores();
+        const store = allStores.find(s => s.id === storeId);
+        if (!store) {
+            return res.status(404).json({ error: "Store not found." });
+        }
+        if (!store.reportRecipients) {
+            return res.status(400).json({ error: "No email recipients configured for this store." });
+        }
+
+        const mailerSettings = await getMailerSettingsBackend();
+        const selectedDate = getSelectedReportDateBackend();
+        const anchorDates = getAnchorDatesBackend(selectedDate);
+        const usersMap = await fetchStoreUsersMap(store.id);
+
+        const formatDateParam = (d) => {
+            const day = String(d.getUTCDate()).padStart(2, '0');
+            const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+            const month = months[d.getUTCMonth()];
+            const year = d.getUTCFullYear();
+            return `${day}-${month}-${year}`;
+        };
+        const formatDateString = (d) => {
+            const day = String(d.getUTCDate()).padStart(2, '0');
+            const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+            return `${day}-${months[d.getUTCMonth()]}-${d.getUTCFullYear()}`;
+        };
+
+        const formattedParam = formatDateParam(anchorDates[0]);
+        const salesUrl = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${store.id}/getsale`;
+        const summaryUrl = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${store.id}/saleSummaryReport`;
+
+        const [salesRes, summaryRes, trendSummary] = await Promise.all([
+            callExternalApi(salesUrl, { fromDate: formattedParam, toDate: formattedParam }).catch(() => ({ data: { sales: [] } })),
+            callExternalApi(summaryUrl, { dateOption: 'DR', fromDate: formattedParam, toDate: formattedParam }).catch(() => ({ data: [] })),
+            fetchStoreTrendSummaryBackend(store.id, anchorDates).catch(() => ({}))
+        ]);
+
+        const salesData = salesRes?.data;
+        const summaryData = summaryRes?.data;
+        const salesList = [];
+
+        if (salesData?.sales) {
+            salesData.sales.forEach((sale) => {
+                const summary = Array.isArray(summaryData) ? summaryData.find((s) => s.id === sale.id) : null;
+                const netSales = parseFloatVal(summary?.netSales || sale.netSalesStr);
+                const discounts = parseFloatVal(summary?.discounts || 0);
+
+                if (netSales > 0 || discounts > 0) {
+                    const closedBy = sale.saleCloseEmployee ? (usersMap[sale.saleCloseEmployee] || sale.saleCloseEmployee) : 'Unknown';
+                    const serverName = sale.employee ? (usersMap[sale.employee] || sale.employee) : 'Unknown';
+                    salesList.push({
+                        ticketNo: sale.ticketNo,
+                        customerName: sale.customerName || 'Walkin',
+                        saleOpenTime: sale.saleOpenTime,
+                        floorNo: summary?.floorNo || 'Unknown',
+                        tableNo: summary?.tableNo || 'Unknown',
+                        netSalesVal: netSales,
+                        taxVal: parseFloatVal(summary?.totalTaxAmount || sale.totalTaxAmountStr),
+                        discountVal: discounts,
+                        grossReceiptStr: sale.grossReceiptStr,
+                        closedBy: closedBy,
+                        serverName: serverName,
+                        guestCount: sale.guestCount
+                    });
+                }
+            });
+        }
+
+        const storeTrend = {
+            storeId: store.id,
+            storeName: store.name,
+            thisWk: trendSummary[formatDateString(anchorDates[0])]?.netSales || 0,
+            lastWk: trendSummary[formatDateString(anchorDates[1])]?.netSales || 0,
+            lastMth: trendSummary[formatDateString(anchorDates[2])]?.netSales || 0,
+            lastYr: trendSummary[formatDateString(anchorDates[3])]?.netSales || 0,
+        };
+
+        const venueExcelBuffer = await generateVenueSalesExcelBuffer(store.name, salesList, selectedDate);
+        const venueFileName = `${store.name.replace(/[^a-zA-Z0-9_-]/g, '_')}_Sales_Data_${selectedDate}.xlsx`;
+        const venueRecipients = (mailerSettings?.testRecipients) ? mailerSettings.testRecipients : store.reportRecipients;
+
+        const sent = await sendVenueEmailReport(venueExcelBuffer, venueFileName, selectedDate, mailerSettings, "Sales", storeTrend, anchorDates, venueRecipients, store.name);
+
+        await writeReportLogBackend({
+            type: "Manual",
+            reportType: `Sales - ${store.name}`,
+            reportDate: selectedDate,
+            status: sent ? "SUCCESS" : "FAILED",
+            recipients: venueRecipients,
+            driveLink: null,
+            errorMsg: sent ? null : "Failed to send email"
+        });
+
+        res.json({ success: sent, store: store.name, recipients: venueRecipients });
+    } catch (error) {
+        console.error("[Test Venue Error]:", error);
         res.status(500).json({ error: error.message });
     }
 });

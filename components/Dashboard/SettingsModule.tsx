@@ -114,7 +114,14 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
   });
 
   // Store Form State
-  const [newStore, setNewStore] = useState({ id: "", name: "", brand: "", active: true });
+  const [newStore, setNewStore] = useState<{
+    id: string;
+    name: string;
+    brand: string;
+    active: boolean;
+    reportRecipients?: string;
+    venueEmailEnabled?: boolean;
+  }>({ id: "", name: "", brand: "", active: true, reportRecipients: "", venueEmailEnabled: true });
   const [editingStoreId, setEditingStoreId] = useState<string | null>(null);
 
   const uniqueBrands = useMemo(() => {
@@ -414,13 +421,15 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
       id: store.id,
       name: store.name,
       brand: store.brand || "",
-      active: store.active !== false
+      active: store.active !== false,
+      reportRecipients: store.reportRecipients || "",
+      venueEmailEnabled: store.venueEmailEnabled !== false
     });
   };
 
   const handleCancelEditStore = () => {
     setEditingStoreId(null);
-    setNewStore({ id: "", name: "", brand: "", active: true });
+    setNewStore({ id: "", name: "", brand: "", active: true, reportRecipients: "", venueEmailEnabled: true });
   };
 
   const handleAddStore = async (e: React.FormEvent) => {
@@ -430,7 +439,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
     try {
       await addStore(newStore);
       const isEdit = !!editingStoreId;
-      setNewStore({ id: "", name: "", brand: "", active: true });
+      setNewStore({ id: "", name: "", brand: "", active: true, reportRecipients: "", venueEmailEnabled: true });
       setEditingStoreId(null);
       setMsg(isEdit ? "Store updated successfully" : "Store added successfully");
       fetchData();
@@ -512,6 +521,38 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
       setTestingAutomation(false);
       setTimeout(() => setMsg(""), 5000);
       fetchData(); // Refresh logs tab
+    }
+  };
+
+  const [testingVenueId, setTestingVenueId] = useState<string | null>(null);
+
+  const handleTestVenueEmail = async (store: any) => {
+    if (!store.reportRecipients) {
+      setMsg(`Warning: No email recipients configured for ${store.name}. Please edit the store in the Stores tab first.`);
+      setTimeout(() => setMsg(""), 4000);
+      return;
+    }
+    setTestingVenueId(store.id);
+    setMsg("");
+    try {
+      const response = await fetch(`/api/v1/cron/test-venue/${store.id}`, {
+        method: "POST",
+        headers: {
+          "x-user-username": currentUser.username
+        }
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setMsg(`Success: Test email sent to ${store.name} (${data.recipients || store.reportRecipients})!`);
+      } else {
+        setMsg(`Failed: ${data.error || "Failed to send test email to venue"}`);
+      }
+    } catch (err: any) {
+      setMsg(`Error: ${err.message || "Failed to trigger venue test"}`);
+    } finally {
+      setTestingVenueId(null);
+      setTimeout(() => setMsg(""), 5000);
+      fetchData();
     }
   };
 
@@ -998,6 +1039,39 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                      )}
                    </div>
                  </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
+                    Venue Email Recipients (Optional)
+                  </label>
+                  <input
+                    value={newStore.reportRecipients || ""}
+                    onChange={(e) =>
+                      setNewStore({ ...newStore, reportRecipients: e.target.value })
+                    }
+                    placeholder="e.g. gm@venue.com, chef@venue.com"
+                    className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
+                  />
+                  <p className="text-[10px] text-slate-400 ml-1">Comma-separated email addresses to receive this venue's individual Sales Data Excel report.</p>
+                </div>
+
+                <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">Individual Venue Email</h4>
+                    <p className="text-[10px] text-slate-400 mt-0.5">Send daily single-venue report & SalesData sheet to above recipients.</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer ml-auto">
+                    <input
+                      type="checkbox"
+                      checked={newStore.venueEmailEnabled !== false}
+                      onChange={(e) =>
+                        setNewStore({ ...newStore, venueEmailEnabled: e.target.checked })
+                      }
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-rose-600"></div>
+                  </label>
+                </div>
+
                 <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
                   <div>
                     <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">Active Status</h4>
@@ -1479,20 +1553,93 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
           {/* LIST SIDE */}
         <div className="lg:col-span-7">
           {tab === "AUTOMATION" ? (
-            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-6 transition-colors h-full flex flex-col justify-between">
-              <div className="space-y-6">
+            <div className="space-y-6">
+              {/* Individual Venue Email Routing Section */}
+              <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4 shadow-sm">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                  <div>
+                    <h3 className="text-xs font-bold uppercase text-slate-800 dark:text-slate-200 tracking-wider">
+                      Individual Venue Email Distribution
+                    </h3>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Daily single-row performance summary & SalesData Excel attached for each configured venue.
+                    </p>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-rose-50 text-rose-600 dark:bg-rose-950 dark:text-rose-400">
+                    {stores.filter((s: any) => s.reportRecipients && s.venueEmailEnabled !== false).length} Active Venues
+                  </span>
+                </div>
+
+                <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-72 overflow-y-auto custom-scrollbar">
+                  {stores.map((store: any) => {
+                    const hasRecipients = !!store.reportRecipients;
+                    const isEnabled = store.venueEmailEnabled !== false && hasRecipients;
+                    const isTesting = testingVenueId === store.id;
+
+                    return (
+                      <div key={store.id} className="py-3 flex items-center justify-between gap-3 text-xs">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-800 dark:text-slate-200 truncate">
+                              {store.name}
+                            </span>
+                            {store.brand && (
+                              <span className="text-[9px] px-1.5 py-0.2 rounded font-medium bg-slate-100 dark:bg-slate-800 text-slate-500">
+                                {store.brand}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-400 truncate mt-0.5" title={store.reportRecipients || "No email recipients set"}>
+                            {hasRecipients ? (
+                              <span className="text-slate-600 dark:text-slate-300 font-mono">✉ {store.reportRecipients}</span>
+                            ) : (
+                              <span className="italic text-slate-400">No recipients configured (edit in Stores tab)</span>
+                            )}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className={`text-[9px] px-2 py-0.5 rounded-md font-bold uppercase ${
+                            isEnabled
+                              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
+                              : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+                          }`}>
+                            {isEnabled ? "Enabled" : "Off"}
+                          </span>
+
+                          <button
+                            type="button"
+                            disabled={!hasRecipients || isTesting}
+                            onClick={() => handleTestVenueEmail(store)}
+                            className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950 dark:hover:text-rose-400 text-slate-600 dark:text-slate-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                            title="Send single venue report & SalesData Excel test email"
+                          >
+                            {isTesting ? "Sending..." : "Test Venue"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {stores.length === 0 && (
+                    <p className="text-xs text-slate-400 italic py-4 text-center">No stores registered.</p>
+                  )}
+                </div>
+              </div>
+
+              {/* How Automation Works Explanation */}
+              <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4 shadow-sm">
                 <h3 className="text-xs font-bold uppercase text-slate-400 tracking-wider">
                   How Report Automation Works
                 </h3>
                 
-                <div className="space-y-5 text-sm text-slate-600 dark:text-slate-400">
+                <div className="space-y-4 text-sm text-slate-600 dark:text-slate-400">
                   <div className="flex gap-4 items-start">
                     <div className="p-2.5 bg-rose-50 dark:bg-rose-900/20 rounded-xl text-rose-600 dark:text-rose-400 font-bold shrink-0 text-xs">
                       1
                     </div>
                     <div>
-                      <h4 className="font-bold text-slate-800 dark:text-slate-200 text-sm">Yesterday's Date by Default</h4>
-                      <p className="mt-1 text-xs leading-relaxed">The automation queries Linga API for the complete calendar day of <strong>yesterday</strong>. This avoids incomplete metrics or timezone mismatches from today's running sales.</p>
+                      <h4 className="font-bold text-slate-800 dark:text-slate-200 text-sm">Consolidated Master Run</h4>
+                      <p className="mt-1 text-xs leading-relaxed">The existing Consolidated Report continues to execute at your configured timing and delivers to your master Mailer recipients.</p>
                     </div>
                   </div>
 
@@ -1501,20 +1648,8 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                       2
                     </div>
                     <div>
-                      <h4 className="font-bold text-slate-800 dark:text-slate-200 text-sm">Automated Schedule & Timing</h4>
-                      <p className="mt-1 text-xs leading-relaxed">If enabled, the script compares the current hour in Dubai (GST / UTC+4) with your configured Hour. At the target hour, the server fetches data from the registered venues, creates the Excel report, uploads it to Google Drive, and sends email notifications.</p>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-4 items-start">
-                    <div className="p-2.5 bg-rose-50 dark:bg-rose-900/20 rounded-xl text-rose-600 dark:text-rose-400 font-bold shrink-0 text-xs">
-                      3
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-slate-800 dark:text-slate-200 text-sm">Required Configuration</h4>
-                      <p className="mt-1 text-xs leading-relaxed">
-                        To enable automated reporting distributions and backup saves, please navigate to the <strong>Mailer Setup</strong> tab and input your SMTP credentials and Google Service Account Key.
-                      </p>
+                      <h4 className="font-bold text-slate-800 dark:text-slate-200 text-sm">Venue-Level Distribution</h4>
+                      <p className="mt-1 text-xs leading-relaxed">Each venue with configured recipients automatically receives its own email featuring a single-row performance card and an attached Excel file containing only that venue's <code>SalesData</code> sheet (excluding Menu and Discount data).</p>
                     </div>
                   </div>
                 </div>
@@ -1703,6 +1838,15 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                                   {item.brand && (
                                     <span className="text-[9px] px-1.5 py-0.5 rounded-md font-black uppercase tracking-wider bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
                                       Brand: {item.brand}
+                                    </span>
+                                  )}
+                                  {item.reportRecipients && (
+                                    <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-medium truncate max-w-[220px] ${
+                                      item.venueEmailEnabled !== false
+                                        ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                                        : "bg-slate-100 text-slate-500 line-through dark:bg-slate-800 dark:text-slate-500"
+                                    }`} title={`Venue Recipients: ${item.reportRecipients}`}>
+                                      ✉ {item.reportRecipients}
                                     </span>
                                   )}
                                 </div>

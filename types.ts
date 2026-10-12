@@ -11,6 +11,8 @@ export interface Store {
   name: string;
   brand?: string;
   active?: boolean;
+  reportRecipients?: string; // Comma-separated email addresses for individual venue delivery
+  venueEmailEnabled?: boolean; // Toggle to enable/disable individual venue report
 }
 
 export interface SaleOrder {
