@@ -3336,8 +3336,22 @@ app.post('/api/v1/cron/test-venue/:storeId', checkAuth, async (req, res) => {
         }
 
         const mailerSettings = await getMailerSettingsBackend();
-        const selectedDate = getSelectedReportDateBackend();
-        const anchorDates = getAnchorDatesBackend(selectedDate);
+
+        // Resolve anchor date (yesterday)
+        const today = new Date();
+        today.setUTCDate(today.getUTCDate() - 1);
+        today.setUTCHours(0, 0, 0, 0);
+        const selectedDate = today.toISOString().split('T')[0];
+
+        // Calculate 4 anchor dates
+        const lastWk = new Date(today);
+        lastWk.setUTCDate(today.getUTCDate() - 7);
+        const lastMth = new Date(today);
+        lastMth.setUTCDate(today.getUTCDate() - 28);
+        const lastYr = new Date(today);
+        lastYr.setUTCDate(today.getUTCDate() - 364);
+        const anchorDates = [today, lastWk, lastMth, lastYr];
+
         const usersMap = await fetchStoreUsersMap(store.id);
 
         const formatDateParam = (d) => {
