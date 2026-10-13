@@ -2430,98 +2430,17 @@ async function generateVenueSalesExcelBuffer(storeName, rawSalesData, selectedDa
   return await workbook.xlsx.writeBuffer();
 }
 
-function buildVenueHtmlReport(storeData, selectedDate, anchorDates, reportType = "Sales", customBody = "") {
-  const isCovers = reportType === "Covers";
-  const fmtActual = (val) => (val === 0 || !val) ? "-" : Math.round(val).toLocaleString();
-  const fmtVariance = (val) => {
-    if (val === 0 || isNaN(val)) return "-";
-    const rounded = Math.round(val);
-    const sign = rounded > 0 ? "+" : "";
-    return `${sign}${rounded.toLocaleString()}`;
-  };
-
-  const getStyledVarTd = (val) => {
-    if (val === 0 || isNaN(val)) {
-      return `<td style="padding: 6px 10px; border: 1px solid #CBD5E1; text-align: right; color: #64748B;">-</td>`;
-    }
-    const isPos = val > 0;
-    const bg = isPos ? "#D1FAE5" : "#FEE2E2";
-    const color = isPos ? "#065F46" : "#991B1B";
-    return `<td style="padding: 6px 10px; border: 1px solid #CBD5E1; text-align: right; background-color: ${bg}; color: ${color}; font-weight: bold;">${fmtVariance(val)}</td>`;
-  };
-
-  const thisWk = storeData.thisWk || 0;
-  const lastWk = storeData.lastWk || 0;
-  const lastMth = storeData.lastMth || 0;
-  const lastYr = storeData.lastYr || 0;
-  const varLw = thisWk - lastWk;
-  const varLm = thisWk - lastMth;
-  const varLy = thisWk - lastYr;
-
-  const formatDateDisplay = (d) => {
-    const day = String(d.getUTCDate()).padStart(2, '0');
-    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const month = months[d.getUTCMonth()];
-    const yr = String(d.getUTCFullYear()).slice(-2);
-    return `${day}-${month}-${yr}`;
-  };
-
-  const headerDateThisWk = anchorDates?.[0] ? formatDateDisplay(anchorDates[0]) : "This Wk";
-  const headerDateLastWk = anchorDates?.[1] ? formatDateDisplay(anchorDates[1]) : "Last Wk";
-  const headerDateLastMth = anchorDates?.[2] ? formatDateDisplay(anchorDates[2]) : "Last Mth";
-  const headerDateLastYr = anchorDates?.[3] ? formatDateDisplay(anchorDates[3]) : "Last Yr";
-
-  const interpolatedBody = customBody ? customBody.replace(/\n/g, '<br/>') : '';
-
-  let html = `
-  <div style="font-family: Arial, sans-serif; font-size: 13px; color: #1E293B; line-height: 1.5; max-width: 800px; margin: 0 auto;">
-    <div style="margin-bottom: 16px;">
-      <h2 style="margin: 0 0 4px 0; color: #0F172A; font-size: 18px;">${storeData.storeName} - Daily ${reportType} Report</h2>
-      <p style="margin: 0; font-size: 12px; color: #64748B;">Date: <strong>${selectedDate}</strong></p>
-    </div>
-
-    ${interpolatedBody ? `<div style="margin-bottom: 16px; padding: 12px 16px; background-color: #F8FAFC; border-left: 4px solid #E11D48; border-radius: 4px;">${interpolatedBody}</div>` : ''}
-
-    <table style="border-collapse: collapse; width: 100%; font-size: 12px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-      <thead>
-        <tr style="background-color: #0F172A; color: #FFFFFF;">
-          <th style="padding: 8px 10px; border: 1px solid #334155; text-align: left;">Venue</th>
-          <th style="padding: 8px 10px; border: 1px solid #334155; text-align: right;">${headerDateThisWk}</th>
-          <th style="padding: 8px 10px; border: 1px solid #334155; text-align: right;">${headerDateLastWk}</th>
-          <th style="padding: 8px 10px; border: 1px solid #334155; text-align: right;">${headerDateLastMth}</th>
-          <th style="padding: 8px 10px; border: 1px solid #334155; text-align: right;">${headerDateLastYr}</th>
-          <th style="padding: 8px 10px; border: 1px solid #334155; text-align: right;">WoW</th>
-          <th style="padding: 8px 10px; border: 1px solid #334155; text-align: right;">MoM</th>
-          <th style="padding: 8px 10px; border: 1px solid #334155; text-align: right;">YoY</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr style="font-weight: bold; color: #0F172A; background-color: #FFFFFF;">
-          <td style="padding: 8px 10px; border: 1px solid #CBD5E1; text-align: left;">${storeData.storeName}</td>
-          <td style="padding: 8px 10px; border: 1px solid #CBD5E1; text-align: right;">${fmtActual(thisWk)}</td>
-          <td style="padding: 8px 10px; border: 1px solid #CBD5E1; text-align: right;">${fmtActual(lastWk)}</td>
-          <td style="padding: 8px 10px; border: 1px solid #CBD5E1; text-align: right;">${fmtActual(lastMth)}</td>
-          <td style="padding: 8px 10px; border: 1px solid #CBD5E1; text-align: right;">${fmtActual(lastYr)}</td>
-          ${getStyledVarTd(varLw)}
-          ${getStyledVarTd(varLm)}
-          ${getStyledVarTd(varLy)}
-        </tr>
-      </tbody>
-    </table>
-
-    <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px;">
-      <p style="margin: 0; font-size: 12px; color: #475569;">
-        📎 <strong>Attachment:</strong> Attached is your detailed <code>SalesData</code> Excel sheet for <strong>${storeData.storeName}</strong>.
-      </p>
-    </div>
-
-    <p style="margin: 0; font-size: 11px; color: #94A3B8;">
+function buildVenueHtmlReport(storeName, selectedDate) {
+  return `
+  <div style="font-family: Arial, sans-serif; font-size: 14px; color: #1E293B; line-height: 1.6; max-width: 600px; padding: 20px 0;">
+    <p style="margin: 0 0 16px 0;">
+      Please see attached Daily Sales Summary for <strong>${storeName}</strong> for <strong>${selectedDate}</strong>.
+    </p>
+    <p style="margin: 0; font-size: 12px; color: #94A3B8;">
       This is an automated performance report generated by Linga Analytics.
     </p>
   </div>
   `;
-
-  return html;
 }
 
 async function sendVenueEmailReport(fileBuffer, fileName, selectedDate, mailerSettings, reportType, storeData, anchorDates, recipients, storeName) {
@@ -2544,13 +2463,13 @@ async function sendVenueEmailReport(fileBuffer, fileName, selectedDate, mailerSe
   });
 
   const subject = `[${storeName}] Daily ${reportType} Report - ${selectedDate}`;
-  const htmlContent = buildVenueHtmlReport(storeData, selectedDate, anchorDates, reportType);
+  const htmlContent = buildVenueHtmlReport(storeName, selectedDate);
 
   const mailOptions = {
     from: `"${senderName}" <${user}>`,
     to: recipients,
     subject: subject,
-    text: `Attached is the daily ${reportType} report for ${storeName} on ${selectedDate}.`,
+    text: `Please see attached Daily Sales Summary for ${storeName} for ${selectedDate}.`,
     html: htmlContent,
     attachments: [
       {
