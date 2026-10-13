@@ -85,6 +85,14 @@ async function callExternalApi(url, params = {}, retries = 5) {
     }
 }
 
+function parseFloatVal(val) {
+    if (typeof val === 'number') return val;
+    if (!val) return 0;
+    const clean = String(val).replace(/[$,\s]/g, '');
+    const num = parseFloat(clean);
+    return isNaN(num) ? 0 : num;
+}
+
 function parseStringToDate(str) {
     if (!str.includes('-')) return new Date(str);
     const parts = str.split('-');
