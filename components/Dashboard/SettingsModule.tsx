@@ -88,6 +88,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
     fetchTime: string;
     coversFetchTime?: string;
     salesFetchTime?: string;
+    venueSalesFetchTime?: string;
     reportTypes: ("Covers" | "Sales")[];
     selectedStores: string[];
   }>({
@@ -95,6 +96,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
     fetchTime: "09:30",
     coversFetchTime: "09:30",
     salesFetchTime: "10:30",
+    venueSalesFetchTime: "10:30",
     reportTypes: ["Covers"],
     selectedStores: [],
   });
@@ -190,6 +192,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
         fetchTime: "09:30",
         coversFetchTime: "09:30",
         salesFetchTime: "10:30",
+        venueSalesFetchTime: "10:30",
         reportTypes: ["Covers"] as ("Covers" | "Sales")[],
         selectedStores: [] as string[]
       };
@@ -198,7 +201,8 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
         ...defaultAuto,
         ...loadedAuto,
         coversFetchTime: loadedAuto.coversFetchTime || loadedAuto.fetchTime || "09:30",
-        salesFetchTime: loadedAuto.salesFetchTime || "10:30"
+        salesFetchTime: loadedAuto.salesFetchTime || "10:30",
+        venueSalesFetchTime: loadedAuto.venueSalesFetchTime || loadedAuto.salesFetchTime || "10:30"
       });
       setReportLogs(logs || []);
       if (mailer) {
@@ -1315,11 +1319,11 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                         <p className="text-[10px] text-slate-400 ml-1">Leave all unchecked to include all stores by default.</p>
                       </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-fadeIn">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-fadeIn">
                         {autoSettings.reportTypes.includes("Covers") && (
                           <div className="space-y-1.5">
                             <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 flex items-center justify-between">
-                              <span>Covers Distribution Time</span>
+                              <span>Covers (Master)</span>
                               <span className="text-slate-400 font-normal">(Dubai UTC+4)</span>
                             </label>
                             <input
@@ -1338,7 +1342,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                         {autoSettings.reportTypes.includes("Sales") && (
                           <div className="space-y-1.5">
                             <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 flex items-center justify-between">
-                              <span>Sales Distribution Time</span>
+                              <span>Sales (Master)</span>
                               <span className="text-slate-400 font-normal">(Dubai UTC+4)</span>
                             </label>
                             <input
@@ -1347,6 +1351,24 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                               onChange={(e) => setAutoSettings({ 
                                 ...autoSettings, 
                                 salesFetchTime: e.target.value 
+                              })}
+                              className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
+                            />
+                          </div>
+                        )}
+
+                        {autoSettings.reportTypes.includes("Sales") && (
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 flex items-center justify-between">
+                              <span>Ind. Venue Sales</span>
+                              <span className="text-slate-400 font-normal">(Dubai UTC+4)</span>
+                            </label>
+                            <input
+                              type="time"
+                              value={autoSettings.venueSalesFetchTime || autoSettings.salesFetchTime || "10:30"}
+                              onChange={(e) => setAutoSettings({ 
+                                ...autoSettings, 
+                                venueSalesFetchTime: e.target.value 
                               })}
                               className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
                             />

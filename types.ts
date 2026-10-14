@@ -122,6 +122,7 @@ export interface AutomationSettings {
   fetchTime: string; // e.g. "09:30" (legacy / default)
   coversFetchTime?: string; // e.g. "09:30"
   salesFetchTime?: string; // e.g. "10:30"
+  venueSalesFetchTime?: string; // e.g. "10:30"
   reportTypes?: ("Covers" | "Sales")[];
   selectedStores?: string[];
 }

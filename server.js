@@ -3122,117 +3122,130 @@ async function runDailyAutomation(isManualTest = false) {
         });
         }
         }
+    }
 
-        // --- Individual Venue Email Distribution (Sales Data) ---
-        console.log("[Cron-Venue] Starting individual venue distribution...");
-        const venueStores = filteredStores.filter(s => s.venueEmailEnabled !== false && s.reportRecipients && s.reportRecipients.trim() !== "");
-        for (const store of venueStores) {
-          try {
-            const venueLogType = `Sales - ${store.name}`;
-            const alreadySent = !isManualTest && (await isReportAlreadySentTodayBackend(venueLogType, selectedDate));
-            if (alreadySent) {
-              console.log(`[Cron-Venue Deduplication] Skipping ${venueLogType} for ${selectedDate}: Already sent today.`);
-              resultsSummary.reportsRun.push({
-                type: venueLogType,
+    // -- Individual Venue Email Distribution (Sales Data) --
+    if (reportTypes.includes("Sales")) {
+        const venueTimeMatch = isTimeWindowMatch(settings.venueSalesFetchTime || settings.salesFetchTime, "10:30");
+        if (!venueTimeMatch) {
+            console.log(`[Cron] Skipping Individual Venue Sales Reports: Dubai time does not match configured time (${settings.venueSalesFetchTime || settings.salesFetchTime || "10:30"}).`);
+            resultsSummary.reportsRun.push({
+                type: "Venue Sales",
                 skipped: true,
-                reason: "Already sent today"
-              });
-              continue;
-            }
+                reason: "Time window mismatch"
+            });
+        } else {
+            console.log("[Cron-Venue] Starting individual venue distribution...");
+            const venueStores = filteredStores.filter(s => s.venueEmailEnabled !== false && s.reportRecipients && s.reportRecipients.trim() !== "");
+            for (const store of venueStores) {
+              try {
+                const venueLogType = `Sales - ${store.name}`;
+                const alreadySent = !isManualTest && (await isReportAlreadySentTodayBackend(venueLogType, selectedDate));
+                if (alreadySent) {
+                  console.log(`[Cron-Venue Deduplication] Skipping ${venueLogType} for ${selectedDate}: Already sent today.`);
+                  resultsSummary.reportsRun.push({
+                    type: venueLogType,
+                    skipped: true,
+                    reason: "Already sent today"
+                  });
+                  continue;
+                }
 
-            console.log(`[Cron-Venue] Processing venue report for ${store.name}...`);
-            const usersMap = await fetchStoreUsersMap(store.id);
-            const formatDateParam = (d) => {
-              const day = String(d.getUTCDate()).padStart(2, '0');
-              const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
-              const month = months[d.getUTCMonth()];
-              const year = d.getUTCFullYear();
-              return `${day}-${month}-${year}`;
-            };
-            const formattedParam = formatDateParam(anchorDates[0]);
-            const salesUrl = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${store.id}/getsale`;
-            const summaryUrl = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${store.id}/saleSummaryReport`;
+                console.log(`[Cron-Venue] Processing venue report for ${store.name}...`);
+                const usersMap = await fetchStoreUsersMap(store.id);
+                const formatDateParam = (d) => {
+                  const day = String(d.getUTCDate()).padStart(2, '0');
+                  const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+                  const month = months[d.getUTCMonth()];
+                  const year = d.getUTCFullYear();
+                  return `${day}-${month}-${year}`;
+                };
+                const formattedParam = formatDateParam(anchorDates[0]);
+                const salesUrl = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${store.id}/getsale`;
+                const summaryUrl = `${LINGAPOS_BASE_URL}/v1/lingapos/store/${store.id}/saleSummaryReport`;
 
-            const [salesRes, summaryRes] = await Promise.all([
-              callExternalApi(salesUrl, { fromDate: formattedParam, toDate: formattedParam }).catch(() => ({ data: { sales: [] } })),
-              callExternalApi(summaryUrl, { dateOption: 'DR', fromDate: formattedParam, toDate: formattedParam }).catch(() => ({ data: [] }))
-            ]);
+                const [salesRes, summaryRes, trendSummary] = await Promise.all([
+                  callExternalApi(salesUrl, { fromDate: formattedParam, toDate: formattedParam }).catch(() => ({ data: { sales: [] } })),
+                  callExternalApi(summaryUrl, { dateOption: 'DR', fromDate: formattedParam, toDate: formattedParam }).catch(() => ({ data: [] })),
+                  fetchStoreTrendSummaryBackend(store.id, anchorDates).catch(() => ({}))
+                ]);
 
-            const salesData = salesRes?.data;
-            const summaryData = summaryRes?.data;
-            const salesList = [];
+                const salesData = salesRes?.data;
+                const summaryData = summaryRes?.data;
+                const salesList = [];
 
-            if (salesData?.sales) {
-              salesData.sales.forEach((sale) => {
-                const summary = Array.isArray(summaryData) ? summaryData.find((s) => s.id === sale.id) : null;
-                const netSales = parseFloatVal(summary?.netSales || sale.netSalesStr);
-                const discounts = parseFloatVal(summary?.discounts || 0);
+                if (salesData?.sales) {
+                  salesData.sales.forEach((sale) => {
+                    const summary = Array.isArray(summaryData) ? summaryData.find((s) => s.id === sale.id) : null;
+                    const netSales = parseFloatVal(summary?.netSales || sale.netSalesStr);
+                    const discounts = parseFloatVal(summary?.discounts || 0);
 
-                if (netSales > 0 || discounts > 0) {
-                  const closedBy = sale.saleCloseEmployee ? (usersMap[sale.saleCloseEmployee] || sale.saleCloseEmployee) : 'Unknown';
-                  const serverName = sale.employee ? (usersMap[sale.employee] || sale.employee) : 'Unknown';
-                  salesList.push({
-                    ticketNo: sale.ticketNo,
-                    customerName: sale.customerName || 'Walkin',
-                    saleOpenTime: sale.saleOpenTime,
-                    floorNo: summary?.floorNo || 'Unknown',
-                    tableNo: summary?.tableNo || 'Unknown',
-                    netSalesVal: netSales,
-                    taxVal: parseFloatVal(summary?.totalTaxAmount || sale.totalTaxAmountStr),
-                    discountVal: discounts,
-                    grossReceiptStr: sale.grossReceiptStr,
-                    closedBy: closedBy,
-                    serverName: serverName,
-                    guestCount: sale.guestCount
+                    if (netSales > 0 || discounts > 0) {
+                      const closedBy = sale.saleCloseEmployee ? (usersMap[sale.saleCloseEmployee] || sale.saleCloseEmployee) : 'Unknown';
+                      const serverName = sale.employee ? (usersMap[sale.employee] || sale.employee) : 'Unknown';
+                      salesList.push({
+                        ticketNo: sale.ticketNo,
+                        customerName: sale.customerName || 'Walkin',
+                        saleOpenTime: sale.saleOpenTime,
+                        floorNo: summary?.floorNo || 'Unknown',
+                        tableNo: summary?.tableNo || 'Unknown',
+                        netSalesVal: netSales,
+                        taxVal: parseFloatVal(summary?.totalTaxAmount || sale.totalTaxAmountStr),
+                        discountVal: discounts,
+                        grossReceiptStr: sale.grossReceiptStr,
+                        closedBy: closedBy,
+                        serverName: serverName,
+                        guestCount: sale.guestCount
+                      });
+                    }
                   });
                 }
-              });
+
+                const storeTrend = {
+                  storeId: store.id,
+                  storeName: store.name,
+                  thisWk: trendSummary[formatDateString(anchorDates[0])]?.netSales || 0,
+                  lastWk: trendSummary[formatDateString(anchorDates[1])]?.netSales || 0,
+                  lastMth: trendSummary[formatDateString(anchorDates[2])]?.netSales || 0,
+                  lastYr: trendSummary[formatDateString(anchorDates[3])]?.netSales || 0,
+                };
+
+                const venueExcelBuffer = await generateVenueSalesExcelBuffer(store.name, salesList, selectedDate);
+                const venueFileName = `${store.name.replace(/[^a-zA-Z0-9_-]/g, '_')}_Sales_Data_${selectedDate}.xlsx`;
+                const venueRecipients = (isManualTest && mailerSettings?.venueTestRecipients && mailerSettings.venueTestRecipients.trim() !== '')
+                  ? mailerSettings.venueTestRecipients
+                  : (isManualTest && mailerSettings?.testRecipients)
+                    ? mailerSettings.testRecipients
+                    : store.reportRecipients;
+
+                let venueEmailResult = false;
+                let venueEmailError = null;
+                try {
+                  venueEmailResult = await sendVenueEmailReport(venueExcelBuffer, venueFileName, selectedDate, mailerSettings, "Sales", storeTrend, anchorDates, venueRecipients, store.name);
+                } catch (err) {
+                  console.error(`[Cron-Venue] Email send failed for ${store.name}:`, err.message);
+                  venueEmailError = err.message;
+                }
+
+                await writeReportLogBackend({
+                  type: isManualTest ? "Manual" : "Automated",
+                  reportType: venueLogType,
+                  reportDate: selectedDate,
+                  status: venueEmailResult ? "SUCCESS" : "FAILED",
+                  recipients: venueRecipients,
+                  driveLink: null,
+                  errorMsg: venueEmailError
+                });
+
+                resultsSummary.reportsRun.push({
+                  type: venueLogType,
+                  emailSent: venueEmailResult,
+                  recipients: venueRecipients
+                });
+              } catch (venueErr) {
+                console.error(`[Cron-Venue] Processing error for ${store.name}:`, venueErr.message);
+              }
             }
-
-            const storeTrend = trendData.find(t => t.storeId === store.id) || {
-              storeId: store.id,
-              storeName: store.name,
-              thisWk: 0,
-              lastWk: 0,
-              lastMth: 0,
-              lastYr: 0
-            };
-
-            const venueExcelBuffer = await generateVenueSalesExcelBuffer(store.name, salesList, selectedDate);
-            const venueFileName = `${store.name.replace(/[^a-zA-Z0-9_-]/g, '_')}_Sales_Data_${selectedDate}.xlsx`;
-            const venueRecipients = (isManualTest && mailerSettings?.venueTestRecipients && mailerSettings.venueTestRecipients.trim() !== '')
-              ? mailerSettings.venueTestRecipients
-              : (isManualTest && mailerSettings?.testRecipients)
-                ? mailerSettings.testRecipients
-                : store.reportRecipients;
-
-            let venueEmailResult = false;
-            let venueEmailError = null;
-            try {
-              venueEmailResult = await sendVenueEmailReport(venueExcelBuffer, venueFileName, selectedDate, mailerSettings, "Sales", storeTrend, anchorDates, venueRecipients, store.name);
-            } catch (err) {
-              console.error(`[Cron-Venue] Email send failed for ${store.name}:`, err.message);
-              venueEmailError = err.message;
-            }
-
-            await writeReportLogBackend({
-              type: isManualTest ? "Manual" : "Automated",
-              reportType: venueLogType,
-              reportDate: selectedDate,
-              status: venueEmailResult ? "SUCCESS" : "FAILED",
-              recipients: venueRecipients,
-              driveLink: null,
-              errorMsg: venueEmailError
-            });
-
-            resultsSummary.reportsRun.push({
-              type: venueLogType,
-              emailSent: venueEmailResult,
-              recipients: venueRecipients
-            });
-          } catch (venueErr) {
-            console.error(`[Cron-Venue] Processing error for ${store.name}:`, venueErr.message);
-          }
         }
     }
 
