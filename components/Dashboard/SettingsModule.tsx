@@ -107,6 +107,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
     smtpPass: "",
     reportRecipients: "",
     testRecipients: "",
+    venueTestRecipients: "",
     googleDriveFolderId: "",
     googleServiceAccountKey: "",
     emailSubjectTemplate: "{type} Report - {date}",
@@ -1468,15 +1469,27 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-rose-500 uppercase ml-1">
-                    Test / Trigger Email Recipients (Optional)
+                    Consolidated Test Email Recipients (Optional)
                   </label>
                   <input
                     value={mailerSettings.testRecipients || ""}
                     onChange={(e) => setMailerSettings({ ...mailerSettings, testRecipients: e.target.value })}
-                    placeholder="test-email@domain.com (Used for manual test triggers)"
+                    placeholder="test-email@domain.com (Used for manual Trigger Test Automation)"
                     className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-rose-200 dark:border-rose-900/40 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
                   />
-                  <p className="text-[10px] text-slate-400 ml-1">When clicking "Trigger Automation Test", emails will be sent to this recipient instead of the production list.</p>
+                  <p className="text-[10px] text-slate-400 ml-1">When clicking "Trigger Automation Test", consolidated emails will be sent to this recipient instead of the production list.</p>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-amber-500 uppercase ml-1">
+                    Venue Test Email Recipients (Optional)
+                  </label>
+                  <input
+                    value={mailerSettings.venueTestRecipients || ""}
+                    onChange={(e) => setMailerSettings({ ...mailerSettings, venueTestRecipients: e.target.value })}
+                    placeholder="venue-test@domain.com (Used when clicking 'Test Venue')"
+                    className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-amber-200 dark:border-amber-900/40 rounded-xl text-sm dark:text-white focus:ring-2 ring-amber-500/20 outline-none"
+                  />
+                  <p className="text-[10px] text-slate-400 ml-1">When clicking "Test Venue", individual venue test reports will be sent here instead of the store's configured recipients list.</p>
                 </div>
                 <div className="border-t border-slate-100 dark:border-slate-800 my-4 pt-4 space-y-4">
                   <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400">Google Drive Upload (Optional)</h4>
@@ -1562,8 +1575,13 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                       Individual Venue Email Distribution
                     </h3>
                     <p className="text-[11px] text-slate-400 mt-0.5">
-                      Daily single-row performance summary & SalesData Excel attached for each configured venue.
+                      Daily Sales Data Excel attached for each configured venue.
                     </p>
+                    {mailerSettings.venueTestRecipients && (
+                      <p className="text-[10px] text-amber-500 font-mono mt-1">
+                        ⚡ Venue Test Destination: {mailerSettings.venueTestRecipients}
+                      </p>
+                    )}
                   </div>
                   <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-rose-50 text-rose-600 dark:bg-rose-950 dark:text-rose-400">
                     {stores.filter((s: any) => s.reportRecipients && s.venueEmailEnabled !== false).length} Active Venues

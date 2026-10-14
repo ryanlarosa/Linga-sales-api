@@ -133,6 +133,7 @@ export interface MailerSettings {
   smtpPass?: string;
   reportRecipients?: string;
   testRecipients?: string;
+  venueTestRecipients?: string;
   googleDriveFolderId?: string;
   googleServiceAccountKey?: string;
   emailSubjectTemplate?: string;
