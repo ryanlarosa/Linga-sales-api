@@ -138,6 +138,8 @@ export interface MailerSettings {
   googleServiceAccountKey?: string;
   emailSubjectTemplate?: string;
   emailBodyTemplate?: string;
+  venueEmailSubjectTemplate?: string;
+  venueEmailBodyTemplate?: string;
   senderName?: string;
 }
 

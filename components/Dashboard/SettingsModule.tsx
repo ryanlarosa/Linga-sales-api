@@ -112,6 +112,8 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
     googleServiceAccountKey: "",
     emailSubjectTemplate: "{type} Report - {date}",
     emailBodyTemplate: "Hello,\n\nPlease find attached the Consolidated {type} Report for {date}.\n\nThis is an automated system message.",
+    venueEmailSubjectTemplate: "[{venue}] Daily Sales Report - {date}",
+    venueEmailBodyTemplate: "Please see attached Daily Sales Data for {venue} for {date}.",
   });
 
   // Store Form State
@@ -203,6 +205,8 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
         setMailerSettings({
           emailSubjectTemplate: "{type} Report - {date}",
           emailBodyTemplate: "Hello,\n\nPlease find attached the Consolidated {type} Report for {date}.\n\nThis is an automated system message.",
+          venueEmailSubjectTemplate: "[{venue}] Daily Sales Report - {date}",
+          venueEmailBodyTemplate: "Please see attached Daily Sales Data for {venue} for {date}.",
           ...mailer
         });
       }
@@ -1431,30 +1435,70 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser }) => {
                     className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
                   />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
-                    Email Subject Template
-                  </label>
-                  <input
-                    value={mailerSettings.emailSubjectTemplate || ""}
-                    onChange={(e) => setMailerSettings({ ...mailerSettings, emailSubjectTemplate: e.target.value })}
-                    placeholder="e.g. {type} Report - {date}"
-                    className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
-                  />
-                  <p className="text-[10px] text-slate-400 ml-1">Supported placeholders: <code>{`{type}`}</code>, <code>{`{date}`}</code></p>
+                <div className="border-t border-slate-100 dark:border-slate-800 my-2 pt-3">
+                  <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-3 uppercase tracking-wider">
+                    Consolidated Master Report Templates
+                  </h4>
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
+                        Consolidated Email Subject Template
+                      </label>
+                      <input
+                        value={mailerSettings.emailSubjectTemplate || ""}
+                        onChange={(e) => setMailerSettings({ ...mailerSettings, emailSubjectTemplate: e.target.value })}
+                        placeholder="e.g. {type} Report - {date}"
+                        className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
+                      />
+                      <p className="text-[10px] text-slate-400 ml-1">Supported placeholders: <code>{`{type}`}</code>, <code>{`{date}`}</code></p>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
+                        Consolidated Email Body Template
+                      </label>
+                      <textarea
+                        value={mailerSettings.emailBodyTemplate || ""}
+                        onChange={(e) => setMailerSettings({ ...mailerSettings, emailBodyTemplate: e.target.value })}
+                        placeholder="Hello, please find attached the report..."
+                        rows={4}
+                        className="w-full p-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none resize-none"
+                      />
+                      <p className="text-[10px] text-slate-400 ml-1">Supported placeholders: <code>{`{type}`}</code>, <code>{`{date}`}</code></p>
+                    </div>
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
-                    Email Body Template
-                  </label>
-                  <textarea
-                    value={mailerSettings.emailBodyTemplate || ""}
-                    onChange={(e) => setMailerSettings({ ...mailerSettings, emailBodyTemplate: e.target.value })}
-                    placeholder="Hello, please find attached the report..."
-                    rows={4}
-                    className="w-full p-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none resize-none"
-                  />
-                  <p className="text-[10px] text-slate-400 ml-1">Supported placeholders: <code>{`{type}`}</code>, <code>{`{date}`}</code></p>
+
+                <div className="border-t border-slate-100 dark:border-slate-800 my-2 pt-3">
+                  <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-3 uppercase tracking-wider">
+                    Individual Venue Email Templates (Applied to all Venues)
+                  </h4>
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
+                        Venue Email Subject Template
+                      </label>
+                      <input
+                        value={mailerSettings.venueEmailSubjectTemplate || ""}
+                        onChange={(e) => setMailerSettings({ ...mailerSettings, venueEmailSubjectTemplate: e.target.value })}
+                        placeholder="e.g. [{venue}] Daily Sales Report - {date}"
+                        className="w-full h-11 px-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none"
+                      />
+                      <p className="text-[10px] text-slate-400 ml-1">Supported placeholders: <code>{`{venue}`}</code>, <code>{`{date}`}</code>, <code>{`{type}`}</code></p>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
+                        Venue Email Body Template
+                      </label>
+                      <textarea
+                        value={mailerSettings.venueEmailBodyTemplate || ""}
+                        onChange={(e) => setMailerSettings({ ...mailerSettings, venueEmailBodyTemplate: e.target.value })}
+                        placeholder="Please see attached Daily Sales Data for {venue} for {date}."
+                        rows={3}
+                        className="w-full p-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm dark:text-white focus:ring-2 ring-rose-500/20 outline-none resize-none"
+                      />
+                      <p className="text-[10px] text-slate-400 ml-1">Supported placeholders: <code>{`{venue}`}</code>, <code>{`{date}`}</code>, <code>{`{type}`}</code></p>
+                    </div>
+                  </div>
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
